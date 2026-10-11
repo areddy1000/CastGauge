@@ -4,7 +4,8 @@ import CoreText
 import SwiftUI
 
 /// The menu bar item. It shows the app and title that the Cast device reports.
-/// Otherwise it shows the TV icon and the TV name, with a health dot during a tab mirror.
+/// During a tab mirror, it shows the TV icon, the TV name, and a health dot.
+/// With no cast, it shows the icon only.
 struct MenuBarLabel: View {
     let model: GaugeModel
 
@@ -22,16 +23,18 @@ struct MenuBarLabel: View {
                     .font(Font(NSFont.menuBarFont(ofSize: 0)))
             }
             .accessibilityLabel("CastGauge, \(playing.appName), \(playing.title)")
-        } else if let device = model.device {
+        } else if let device = model.device, model.health != .notCasting {
+            // The TV name shows only during a tab cast. At rest, the label is the icon only.
             HStack {
-                Image(nsImage: Self.tvIcon(dot: model.health == .notCasting ? nil : Self.color(for: model.health)))
+                Image(nsImage: Self.tvIcon(dot: Self.color(for: model.health)))
                 Text(Self.truncated(device.name))
                     .font(Font(NSFont.menuBarFont(ofSize: 0)))
             }
             .accessibilityLabel("CastGauge, \(device.name), \(Self.healthText(model.health))")
         } else {
-            Image(nsImage: Self.tvIcon(dot: nil))
-                .accessibilityLabel("CastGauge, no Cast device")
+            // No text follows the icon, so it needs no right margin.
+            Image(nsImage: Self.tvIcon(dot: nil, margin: 0))
+                .accessibilityLabel("CastGauge, not casting")
         }
     }
 
@@ -45,8 +48,8 @@ struct MenuBarLabel: View {
     private static let iconFont = CTFontCreateWithName("Material Symbols Rounded" as CFString, side, nil)
 
     /// The Material "tv" icon in the menu bar text color, with an optional health dot.
-    static func tvIcon(dot: NSColor?) -> NSImage {
-        let key = dot?.description ?? "none"
+    static func tvIcon(dot: NSColor?, margin: CGFloat = margin) -> NSImage {
+        let key = (dot?.description ?? "none") + "-\(margin)"
         if let cached = iconCache[key] { return cached }
         let image = NSImage(size: NSSize(width: side + margin, height: side), flipped: false) { _ in
             // The menu bar sets the drawing appearance, so labelColor matches a light or dark menu bar.
