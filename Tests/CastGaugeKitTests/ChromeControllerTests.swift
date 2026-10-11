@@ -39,9 +39,9 @@ struct ChromeControllerTests {
     }
 
     @Test func parsesOwnLaunchAsActive() {
-        let s = MirrorSettings(maxRateMbps: 12, bufferMs: 400, frameRate: 30)
-        let argv = ["Google Chrome", "--enable-features=CastStreamingMaxVideoBitrate:max_bitrate_mbps/12",
-                    "--castgauge-playout-delay=400"]
+        let s = MirrorSettings(maxRateMbps: 12, bufferMs: 400)
+        let argv = ["Google Chrome", "--enable-features=CastStreamingMaxVideoBitrate:max_bitrate_mbps/12,CastStreaming60fps",
+                    "--disable-features=MediaRemoting", "--castgauge-playout-delay=400"]
         #expect(ChromeController.state(fromArguments: argv) == .active(s))
     }
 
@@ -54,7 +54,7 @@ struct ChromeControllerTests {
 
     @Test func restartLaunchesAfterQuit() async throws {
         let fake = FakeChrome(running: true, quits: true)
-        let s = MirrorSettings(maxRateMbps: 12, bufferMs: 400, frameRate: 30)
+        let s = MirrorSettings(maxRateMbps: 12, bufferMs: 400)
         try await ChromeController(app: fake, quitTimeout: .seconds(1)).restart(with: s)
         #expect(fake.launches == [s.openArguments()])
     }
@@ -67,7 +67,7 @@ struct ChromeControllerTests {
 
     @Test func restartClampsSettings() async throws {
         let fake = FakeChrome(running: false, quits: true)
-        try await ChromeController(app: fake).restart(with: MirrorSettings(maxRateMbps: 99, bufferMs: 400, frameRate: 30))
-        #expect(fake.launches.first?.contains("--enable-features=CastStreamingMaxVideoBitrate:max_bitrate_mbps/20") == true)
+        try await ChromeController(app: fake).restart(with: MirrorSettings(maxRateMbps: 99, bufferMs: 400))
+        #expect(fake.launches.first?.contains("--enable-features=CastStreamingMaxVideoBitrate:max_bitrate_mbps/20,CastStreaming60fps") == true)
     }
 }

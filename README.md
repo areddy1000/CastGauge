@@ -14,13 +14,8 @@ It also sets the Chrome mirror quality when Chrome starts.
   and the media title that the device reports. CastGauge only reads this status on port 8009.
   It never sends a playback command.
 - The panel shows the rate against the maximum, the delay, the loss, and the Mac Wi-Fi signal.
-- The Quality card sets the maximum rate (5 to 20 Mbit/s), the buffer (100 to 1000 ms), the
-  frame rate (30 or 60 fps), and the fullscreen video mode:
-  - Remoting: Chrome may send a fullscreen video file to the TV, which plays it at its own frame
-    rate. Chrome decides when: the video plays, is long enough, has no copy protection, and has
-    a supported format.
-  - Mirror: fullscreen video is mirrored like the rest of the tab.
-  - Remoting and 60 fps gray out each other, because the test TV stops the cast with both.
+- The Quality card sets the maximum rate (5 to 20 Mbit/s) and the buffer (100 to 1000 ms).
+  The content sets its own frame rate, up to 60 fps.
 
 ## How the quality settings work
 
@@ -30,14 +25,18 @@ way (the same as Cmd-Q) and starts it again with:
 | Value | Chrome launch input |
 |---|---|
 | Maximum rate | `--enable-features=CastStreamingMaxVideoBitrate:max_bitrate_mbps/<n>` |
-| 60 fps | `CastStreaming60fps` in the same `--enable-features` list |
+| Frame rate limit 60 (fixed) | `CastStreaming60fps` in the same `--enable-features` list |
+| Remoting off (fixed) | `--disable-features=MediaRemoting` |
 | Buffer | environment variable `CHROME_MIRRORING_PLAYOUT_DELAY=<ms>` |
-| Mirror, or 60 fps | `--disable-features=MediaRemoting` |
 | Marker | `--castgauge-playout-delay=<ms>`. Chrome ignores it. CastGauge reads it back. |
 
-At 60 fps, the test TV (Chromecast with Google TV) did not answer the "remoting" offer. Chrome
-uses remoting for the "optimize fullscreen video" mode. With no answer, Chrome stopped the cast.
-Plain mirroring at 60 fps worked, so a 60 fps launch also turns remoting off.
+Two switches are fixed:
+
+- The frame rate limit is 60, so a 30 fps stream plays at 30 and a 60 fps stream at 60. Chrome's
+  default limit is 30.
+- Remoting is off. Remoting lets Chrome send a fullscreen video file to the TV. The test TV
+  (Chromecast with Google TV) never answered a remoting offer, at any rate, buffer, or frame
+  rate. Chrome then lost 4 s at each cast start, and with the 60 limit it stopped the cast.
 
 Chrome 154 has all of these. The Chrome default maximum is 5 Mbit/s.
 
