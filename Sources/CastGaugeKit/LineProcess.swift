@@ -1,23 +1,38 @@
 import Foundation
-import Synchronization
 
 /// Runs a command-line tool and sends each output line to a handler.
-/// When the tool exits, it starts the tool again after 2 seconds, until `stop()`.
+/// When the tool exits, it starts the tool again after a pause, until `stop()`.
+/// When the tool writes nothing for the silence limit, it stops the tool, so the restart applies.
 public final class LineProcess: Sendable {
     private let executable: String
     private let arguments: [String]
+    private let silenceLimit: Duration
+    private let restartDelay: Duration
+    private let onLaunch: @Sendable () -> Void
     private let onLine: @Sendable (String) -> Void
-    private let state = Mutex(State())
+    private let state = Locked(State())
+    private let queue = DispatchQueue(label: "LineProcess")
 
-    private struct State {
+    private struct State: @unchecked Sendable {
         var process: Process?
         var running = false
         var buffer = Data()
+        var lastOutput = Date()
     }
 
-    public init(executable: String, arguments: [String], onLine: @Sendable @escaping (String) -> Void) {
+    public init(
+        executable: String,
+        arguments: [String],
+        silenceLimit: Duration = .seconds(5),
+        restartDelay: Duration = .seconds(2),
+        onLaunch: @Sendable @escaping () -> Void = {},
+        onLine: @Sendable @escaping (String) -> Void
+    ) {
         self.executable = executable
         self.arguments = arguments
+        self.silenceLimit = silenceLimit
+        self.restartDelay = restartDelay
+        self.onLaunch = onLaunch
         self.onLine = onLine
     }
 
@@ -58,31 +73,57 @@ public final class LineProcess: Sendable {
                 s.buffer.removeAll()
                 return s.running
             }
-            guard again else { return }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [weak self] in
-                guard let self, self.state.withLock({ $0.running }) else { return }
-                self.launch()
-            }
+            if again { self.relaunchLater() }
         }
-        let started: Bool
+        // The monitor resets its own state here, because a new process starts its counts again.
+        onLaunch()
         do {
             try process.run()
-            started = true
         } catch {
-            started = false
+            relaunchLater()
+            return
         }
-        state.withLock { $0.process = started ? process : nil }
-        if !started {
-            // The tool did not start. Try again after the same pause as after an exit.
-            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [weak self] in
-                guard let self, self.state.withLock({ $0.running }) else { return }
-                self.launch()
+        let keep = state.withLock { s -> Bool in
+            // stop() can come while the tool starts. Then the new process must not stay.
+            guard s.running else { return false }
+            s.process = process
+            s.lastOutput = Date()
+            return true
+        }
+        if keep {
+            watch(process)
+        } else {
+            process.terminate()
+        }
+    }
+
+    private func relaunchLater() {
+        queue.asyncAfter(deadline: .now() + restartDelay.timeInterval) { [weak self] in
+            guard let self, self.state.withLock({ $0.running }) else { return }
+            self.launch()
+        }
+    }
+
+    /// Stops a tool that writes nothing for the silence limit. The exit then starts it again.
+    private func watch(_ process: Process) {
+        let interval = silenceLimit.timeInterval / 2
+        queue.asyncAfter(deadline: .now() + interval) { [weak self] in
+            guard let self else { return }
+            let silent = self.state.withLock { s -> Bool? in
+                guard s.running, s.process === process, process.isRunning else { return nil }
+                return Date().timeIntervalSince(s.lastOutput) > self.silenceLimit.timeInterval
+            }
+            switch silent {
+            case true?: process.terminate()
+            case false?: self.watch(process)
+            case nil: break
             }
         }
     }
 
     private func receive(_ chunk: Data) {
         let lines = state.withLock { s -> [String] in
+            s.lastOutput = Date()
             s.buffer.append(chunk)
             var lines: [String] = []
             while let newline = s.buffer.firstIndex(of: 0x0A) {
@@ -93,5 +134,12 @@ public final class LineProcess: Sendable {
             return lines
         }
         lines.forEach(onLine)
+    }
+}
+
+extension Duration {
+    var timeInterval: TimeInterval {
+        let (seconds, attoseconds) = components
+        return TimeInterval(seconds) + TimeInterval(attoseconds) / 1e18
     }
 }

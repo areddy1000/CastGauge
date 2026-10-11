@@ -26,10 +26,10 @@ public enum PingEvent: Equatable, Sendable {
 
 /// The link values over the last ping results.
 public struct LinkStats: Equatable, Sendable {
-    /// The average reply time in milliseconds.
-    public let avgMs: Double
-    /// The population standard deviation of the reply times in milliseconds.
-    public let jitterMs: Double
+    /// The average reply time in milliseconds, or nil when no ping got a reply.
+    public let avgMs: Double?
+    /// The population standard deviation of the reply times in milliseconds, or nil with no reply.
+    public let jitterMs: Double?
     /// The percent of pings with no reply.
     public let lossPercent: Double
     /// The number of pings with no reply.
@@ -37,7 +37,7 @@ public struct LinkStats: Equatable, Sendable {
     /// The time of the newest ping result.
     public let at: Date
 
-    public init(avgMs: Double, jitterMs: Double, lossPercent: Double, lostCount: Int, at: Date) {
+    public init(avgMs: Double?, jitterMs: Double?, lossPercent: Double, lostCount: Int, at: Date) {
         self.avgMs = avgMs
         self.jitterMs = jitterMs
         self.lossPercent = lossPercent
@@ -73,7 +73,7 @@ public struct LinkWindow: Sendable {
         let lost = events.count - times.count
         let loss = Double(lost) / Double(events.count) * 100
         guard !times.isEmpty else {
-            return LinkStats(avgMs: 0, jitterMs: 0, lossPercent: loss, lostCount: lost, at: lastAt)
+            return LinkStats(avgMs: nil, jitterMs: nil, lossPercent: loss, lostCount: lost, at: lastAt)
         }
         let avg = times.reduce(0, +) / Double(times.count)
         let variance = times.map { ($0 - avg) * ($0 - avg) }.reduce(0, +) / Double(times.count)

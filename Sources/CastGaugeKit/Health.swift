@@ -11,10 +11,12 @@ public enum Health: Equatable, Sendable {
         // Without fresh link values, the app cannot say that the link is good.
         guard let link = s.link else { return .unstable }
         if link.lostCount >= t.lostPings { return .losingData }
-        if link.avgMs >= t.delayMs || link.jitterMs >= t.jitterMs { return .unstable }
+        // No reply at all is a lost link, even with fewer losses than the limit so far.
+        guard let avg = link.avgMs, let jitter = link.jitterMs else { return .losingData }
+        if avg >= t.delayMs || jitter >= t.jitterMs { return .unstable }
         if let rate = s.rateBps, let previous = s.previousRateBps, previous > 0,
            Double(rate) < Double(previous) * t.suddenDropRatio,
-           link.avgMs > t.delayMs / 2 {
+           avg > t.delayMs / 2 {
             return .unstable
         }
         return .good

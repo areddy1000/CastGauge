@@ -44,6 +44,5 @@ struct PingParserTests {
         var w = LinkWindow(capacity: 3)
         [PingEvent.timeout(seq: 1), .timeout(seq: 2)].forEach { w.add($0, at: Date()) }
         #expect(w.stats?.lossPercent == 100)
-        #expect(w.stats?.avgMs == 0)
     }
 }

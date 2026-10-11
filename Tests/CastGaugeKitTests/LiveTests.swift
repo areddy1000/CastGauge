@@ -25,8 +25,8 @@ extension LiveTests {
         defer { monitor.stop() }
         try await Task.sleep(for: .seconds(4))
         let stats = try #require(monitor.latest)
-        print("live link:", stats.avgMs, "ms avg,", stats.jitterMs, "ms jitter,", stats.lossPercent, "% loss")
-        #expect(stats.avgMs > 0)
+        print("live link:", stats.avgMs as Any, "ms avg,", stats.jitterMs as Any, "ms jitter,", stats.lossPercent, "% loss")
+        #expect((stats.avgMs ?? 0) > 0)
     }
 }
 

@@ -27,7 +27,7 @@ struct ConnectionCard: View {
             LinearBar(fraction: min((model.rateMbps ?? 0) / Double(activeMax), 1))
                 .padding(.top, 8)
             HStack(spacing: 8) {
-                Tile(value: model.snapshot.link.map { String(format: "%.1f ms", $0.avgMs) } ?? "—", label: "Delay")
+                Tile(value: model.snapshot.link?.avgMs.map { String(format: "%.1f ms", $0) } ?? "—", label: "Delay")
                 Tile(value: model.snapshot.link.map { String(format: "%.0f %%", $0.lossPercent) } ?? "—", label: "Loss")
                 Tile(value: model.wifi.map { "\($0.rssi) dBm" } ?? "—",
                      label: model.wifi.map { "Mac · \($0.band)" } ?? "Mac Wi-Fi")
