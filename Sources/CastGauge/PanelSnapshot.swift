@@ -2,16 +2,16 @@ import AppKit
 import CastGaugeKit
 import SwiftUI
 
-/// A developer option: `CastGauge --snapshot <file.png> [--dark] [--expanded]` draws the panel
+/// A developer option: `CastGauge --snapshot <file.png> [--dark] [--expanded] [--confirming]` draws the panel
 /// with sample values to a PNG file and quits.
 /// It lets a build check the panel without a click on the menu bar.
 @MainActor
 enum PanelSnapshot {
-    static func runIfRequested<V: View>(_ content: (_ expanded: Bool) -> V) {
+    static func runIfRequested<V: View>(_ content: (_ expanded: Bool, _ confirming: Bool) -> V) {
         let args = CommandLine.arguments
         guard let index = args.firstIndex(of: "--snapshot"), index + 1 < args.count else { return }
         let dark = args.contains("--dark")
-        let renderer = ImageRenderer(content: content(args.contains("--expanded")).environment(\.colorScheme, dark ? .dark : .light))
+        let renderer = ImageRenderer(content: content(args.contains("--expanded"), args.contains("--confirming")).environment(\.colorScheme, dark ? .dark : .light))
         renderer.scale = 2
         // The dynamic colors read the app appearance, so set it to match the scheme.
         NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)

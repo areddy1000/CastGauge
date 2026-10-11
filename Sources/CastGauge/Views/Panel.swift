@@ -5,8 +5,38 @@ import SwiftUI
 struct Panel: View {
     let model: GaugeModel
     var startExpanded = false
+    var startConfirming = false
+    /// False for the snapshot option, because ImageRenderer does not draw a scroll view.
+    var scrolls = true
+    @State private var contentHeight: CGFloat = 0
+
+    /// The panel can use the visible screen height below the menu bar, less a margin.
+    private var maxHeight: CGFloat {
+        (NSScreen.main?.visibleFrame.height ?? 800) - 24
+    }
+
+    private var panelHeight: CGFloat {
+        min(max(contentHeight, 1), maxHeight)
+    }
 
     var body: some View {
+        if scrolls {
+            // The window takes its height from the scroll view. The scroll view takes the content
+            // height up to the screen limit, and scrolls the rest.
+            ScrollView(.vertical) {
+                content
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(width: 340, height: panelHeight)
+            .background(MaterialColor.surface)
+            .background(WindowHeightSync(height: panelHeight))
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         VStack(spacing: 8) {
             HeaderView(model: model)
             if model.networkPermissionDenied {
@@ -14,7 +44,7 @@ struct Panel: View {
             } else {
                 ConnectionCard(model: model)
             }
-            QualityCard(model: model, expanded: startExpanded)
+            QualityCard(model: model, expanded: startExpanded, confirming: startConfirming)
             HStack {
                 Spacer()
                 Button("Quit CastGauge") { NSApplication.shared.terminate(nil) }
@@ -69,5 +99,25 @@ struct PermissionCard: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .card()
+    }
+}
+
+/// Sets the menu bar window to the panel height, with the top edge fixed under the menu bar.
+/// The menu bar window does not follow a change in content height by itself. Without this,
+/// the window keeps its old height, the content moves down, and empty space shows.
+struct WindowHeightSync: NSViewRepresentable {
+    let height: CGFloat
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let height = height
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            let content = window.contentRect(forFrameRect: window.frame)
+            guard abs(content.height - height) > 0.5 else { return }
+            let target = NSRect(x: content.minX, y: content.maxY - height, width: content.width, height: height)
+            window.setFrame(window.frameRect(forContentRect: target), display: true, animate: false)
+        }
     }
 }

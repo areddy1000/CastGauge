@@ -6,7 +6,9 @@ struct CastGaugeApp: App {
 
     init() {
         registerBundledFonts()
-        PanelSnapshot.runIfRequested { expanded in Panel(model: PanelSnapshot.sampleModel(), startExpanded: expanded) }
+        PanelSnapshot.runIfRequested { expanded, confirming in
+            Panel(model: PanelSnapshot.sampleModel(), startExpanded: expanded, startConfirming: confirming, scrolls: false)
+        }
     }
 
     var body: some Scene {

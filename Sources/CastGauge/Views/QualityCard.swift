@@ -7,9 +7,10 @@ struct QualityCard: View {
     @State private var expanded: Bool
     @State private var confirming = false
 
-    init(model: GaugeModel, expanded: Bool = false) {
+    init(model: GaugeModel, expanded: Bool = false, confirming: Bool = false) {
         self.model = model
-        _expanded = State(initialValue: expanded)
+        _expanded = State(initialValue: expanded || confirming)
+        _confirming = State(initialValue: confirming)
     }
 
     private var summary: String {
@@ -49,12 +50,6 @@ struct QualityCard: View {
         }
         .card()
         .clipped()
-        .confirmationDialog("Restart Chrome?", isPresented: $confirming) {
-            Button("Restart Chrome") { Task { await model.applySettings() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The cast stops. Chrome reopens your tabs. Start the cast again after Chrome opens.")
-        }
     }
 
     private var controls: some View {
@@ -73,8 +68,16 @@ struct QualityCard: View {
             SegmentedControl(selection: $model.settings.frameRate, options: MirrorSettings.frameRates) { "\($0) fps" }
             stateLine
                 .padding(.top, 14)
-            applyButton
-                .padding(.top, 10)
+            // The confirmation stays inside the panel. A system dialog takes the focus from the
+            // menu bar window, and macOS then closes the whole panel.
+            if confirming {
+                confirmation
+                    .padding(.top, 10)
+                    .transition(.opacity)
+            } else {
+                applyButton
+                    .padding(.top, 10)
+            }
             if let error = model.restartError {
                 Text(message(for: error))
                     .font(MaterialType.font(13))
@@ -102,9 +105,51 @@ struct QualityCard: View {
         .accessibilityElement(children: .combine)
     }
 
+    private var confirmation: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Restart Chrome?")
+                .font(MaterialType.font(16, weight: .medium))
+            Text("The cast stops. Chrome reopens your tabs. Start the cast again after Chrome opens.")
+                .font(MaterialType.font(13))
+                .foregroundStyle(MaterialColor.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Spacer()
+                Button {
+                    withAnimation(MaterialMotion.emphasized) { confirming = false }
+                } label: {
+                    Text("Cancel")
+                        .font(MaterialType.font(14, weight: .medium))
+                        .foregroundStyle(MaterialColor.primary)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 40)
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(MaterialPressStyle())
+                .keyboardShortcut(.cancelAction)
+                Button {
+                    withAnimation(MaterialMotion.emphasized) { confirming = false }
+                    Task { await model.applySettings() }
+                } label: {
+                    Text("Restart Chrome")
+                        .font(MaterialType.font(14, weight: .medium))
+                        .foregroundStyle(MaterialColor.onPrimary)
+                        .padding(.horizontal, 20)
+                        .frame(minHeight: 40)
+                        .background(MaterialColor.primary, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(MaterialPressStyle())
+            }
+        }
+        .padding(16)
+        .background(MaterialColor.tile, in: RoundedRectangle(cornerRadius: MaterialShape.card, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
+
     private var applyButton: some View {
         Button {
-            confirming = true
+            withAnimation(MaterialMotion.emphasized) { confirming = true }
         } label: {
             HStack(spacing: 8) {
                 if model.isRestarting {
