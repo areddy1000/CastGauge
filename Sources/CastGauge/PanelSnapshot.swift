@@ -2,7 +2,7 @@ import AppKit
 import CastGaugeKit
 import SwiftUI
 
-/// A developer option: `CastGauge --snapshot <file.png> [--dark] [--expanded] [--confirming]` draws the panel
+/// A developer option: `CastGauge --snapshot <file.png> [--dark] [--expanded] [--confirming] [--list]` draws the panel
 /// with sample values to a PNG file and quits.
 /// It lets a build check the panel without a click on the menu bar.
 @MainActor
@@ -35,6 +35,14 @@ enum PanelSnapshot {
         model.health = .good
         model.wifi = WiFiStatus(rssi: -51, noise: -95, band: "5 GHz")
         model.chromeState = .inactive
+        if CommandLine.arguments.contains("--list") {
+            // No tab cast: two Chromecasts, one idle and one with an app.
+            model.health = .notCasting
+            model.devices = [
+                CastDevice(id: "a", name: "Bedroom TV", isMirroring: false, address: "192.168.1.155", statusText: "YouTube"),
+                CastDevice(id: "b", name: "Kitchen Display", isMirroring: false, address: "192.168.1.170", statusText: ""),
+            ]
+        }
         return model
     }
 }

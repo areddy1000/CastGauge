@@ -9,18 +9,35 @@ public struct CastDevice: Equatable, Sendable {
     public let isMirroring: Bool
     /// The IPv4 address, after the resolve step.
     public var address: String?
+    /// The status text of the running app, from the `rs` record. Empty or nil when idle.
+    public var statusText: String?
 
-    public init(id: String, name: String, isMirroring: Bool, address: String?) {
+    public init(id: String, name: String, isMirroring: Bool, address: String?, statusText: String? = nil) {
         self.id = id
         self.name = name
         self.isMirroring = isMirroring
         self.address = address
+        self.statusText = statusText
+    }
+
+    /// What the device does now, from its Bonjour record. The list needs no connection for it.
+    public enum Activity: Equatable, Sendable {
+        case idle
+        case castingTab
+        case app(String)
+    }
+
+    public var activity: Activity {
+        if isMirroring { return .castingTab }
+        guard let text = statusText, !text.isEmpty else { return .idle }
+        return .app(text)
     }
 
     /// Makes a device from the Bonjour TXT record. It needs `id` and `fn`.
     public static func from(txt: [String: String]) -> CastDevice? {
         guard let id = txt["id"], let name = txt["fn"] else { return nil }
-        return CastDevice(id: id, name: name, isMirroring: txt["rs"] == "Chrome Mirroring", address: nil)
+        return CastDevice(id: id, name: name, isMirroring: txt["rs"] == "Chrome Mirroring", address: nil,
+                          statusText: txt["rs"])
     }
 
     /// Returns the first device that mirrors a Chrome tab, or nil.

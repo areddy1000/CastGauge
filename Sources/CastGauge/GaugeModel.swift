@@ -24,6 +24,12 @@ final class GaugeModel {
     var nowPlaying: NowPlaying?
     /// The icon of the now-playing app, after it loads.
     var nowPlayingIcon: NSImage?
+    /// Every Chromecast on the network, for the list when no tab cast runs.
+    var devices: [CastDevice] = []
+    /// The devices with a Stop request in progress.
+    var stopping: Set<String> = []
+    /// The reason the last Stop request failed, or nil.
+    var stopError: String?
 
     /// The rate in Mbit/s, or nil when no fresh value exists.
     var rateMbps: Double? {
@@ -58,6 +64,21 @@ final class GaugeModel {
         }
     }
 
+    /// Ends what the device casts, the same as Stop in the Google Home app.
+    func stop(_ device: CastDevice) async {
+        guard let address = device.address, !stopping.contains(device.id) else { return }
+        stopping.insert(device.id)
+        stopError = nil
+        do {
+            try await CastStopper.stop(address: address)
+        } catch CastStopError.noSession {
+            // The cast already ended. Nothing is left to stop.
+        } catch {
+            stopError = "\(device.name) did not stop. Try again."
+        }
+        stopping.remove(device.id)
+    }
+
     func applySettings() async {
         isRestarting = true
         restartError = nil
@@ -75,6 +96,7 @@ final class GaugeModel {
     private func sample() {
         networkPermissionDenied = discovery.permissionDenied
         let devices = discovery.devices
+        if devices != self.devices { self.devices = devices }
         // Show the mirroring device. With no mirror, show an idle device so the header has a name.
         device = CastDevice.pick(devices) ?? devices.first
         let casting = device?.isMirroring ?? false

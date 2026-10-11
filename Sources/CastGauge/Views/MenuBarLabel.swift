@@ -10,7 +10,6 @@ struct MenuBarLabel: View {
 
     var body: some View {
         content
-            .task { model.start() }
     }
 
     @ViewBuilder

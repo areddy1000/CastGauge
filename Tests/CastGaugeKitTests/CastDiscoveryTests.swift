@@ -6,7 +6,7 @@ import Testing
 struct CastDiscoveryTests {
     @Test func parsesTXT() {
         let d = CastDevice.from(txt: ["id": "d6f4", "fn": "Bedroom TV", "md": "Chromecast", "rs": "Chrome Mirroring"])
-        #expect(d == CastDevice(id: "d6f4", name: "Bedroom TV", isMirroring: true, address: nil))
+        #expect(d == CastDevice(id: "d6f4", name: "Bedroom TV", isMirroring: true, address: nil, statusText: "Chrome Mirroring"))
     }
 
     @Test func idleDeviceIsNotMirroring() {

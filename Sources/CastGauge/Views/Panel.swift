@@ -38,14 +38,19 @@ struct Panel: View {
 
     private var content: some View {
         VStack(spacing: 8) {
-            HeaderView(model: model)
             if model.networkPermissionDenied {
+                HeaderView(model: model)
                 PermissionCard()
+            } else if model.health == .notCasting {
+                // No tab cast: the list of Chromecasts, with Stop for a device that casts.
+                DeviceListCard(model: model)
             } else {
+                HeaderView(model: model)
                 ConnectionCard(model: model)
             }
             QualityCard(model: model, expanded: startExpanded, confirming: startConfirming)
             HStack {
+                OpenAtLoginSwitch()
                 Spacer()
                 Button("Quit CastGauge") { NSApplication.shared.terminate(nil) }
                     .buttonStyle(.plain)
@@ -119,5 +124,32 @@ struct WindowHeightSync: NSViewRepresentable {
             let target = NSRect(x: content.minX, y: content.maxY - height, width: content.width, height: height)
             window.setFrame(window.frameRect(forContentRect: target), display: true, animate: false)
         }
+    }
+}
+
+/// The "Open at Login" switch in the panel footer, as a Material checkbox.
+/// It reads the system state when it shows.
+struct OpenAtLoginSwitch: View {
+    @State private var enabled = LoginItem.isEnabled
+
+    var body: some View {
+        Button {
+            LoginItem.setEnabled(!enabled)
+            enabled = LoginItem.isEnabled
+        } label: {
+            HStack(spacing: 6) {
+                Symbol(enabled ? "check_box" : "check_box_outline_blank", size: 18)
+                    .foregroundStyle(enabled ? MaterialColor.primary : MaterialColor.onSurfaceVariant)
+                Text("Open at Login")
+                    .font(MaterialType.font(12, weight: .medium))
+                    .foregroundStyle(MaterialColor.onSurfaceVariant)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onAppear { enabled = LoginItem.isEnabled }
+        .accessibilityLabel("Open at Login")
+        .accessibilityValue(enabled ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
     }
 }

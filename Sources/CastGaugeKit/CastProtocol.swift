@@ -117,6 +117,18 @@ public struct CastApp: Equatable, Sendable {
     public let statusText: String?
     public let transportID: String?
     public let isIdleScreen: Bool
+    /// The session to name in a STOP request.
+    public var sessionID: String? = nil
+}
+
+/// Cast requests that change the device state. CastGauge sends them only when the user asks.
+public enum CastCommand {
+    /// Ends the app session on the receiver, the same as Stop in the Google Home app.
+    public static func stop(sessionID: String, requestID: Int) -> String {
+        let object: [String: Any] = ["type": "STOP", "sessionId": sessionID, "requestId": requestID]
+        let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
+        return String(decoding: data, as: UTF8.self)
+    }
 }
 
 /// A `RECEIVER_STATUS` message.
@@ -137,7 +149,8 @@ public struct ReceiverStatus: Equatable, Sendable {
             iconURL: (first["iconUrl"] as? String).flatMap(URL.init(string:)),
             statusText: first["statusText"] as? String,
             transportID: first["transportId"] as? String,
-            isIdleScreen: first["isIdleScreen"] as? Bool ?? false
+            isIdleScreen: first["isIdleScreen"] as? Bool ?? false,
+            sessionID: first["sessionId"] as? String
         ))
     }
 }

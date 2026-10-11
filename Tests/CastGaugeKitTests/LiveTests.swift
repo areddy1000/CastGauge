@@ -66,3 +66,14 @@ extension LiveTests {
         #expect(monitor.app != nil)
     }
 }
+
+extension LiveTests {
+    @Test func measuresTheInterfaceRate() async throws {
+        let traffic = InterfaceTraffic(targetAddress: tv)
+        traffic.sample()
+        try await Task.sleep(for: .seconds(1))
+        traffic.sample()
+        let latest = try #require(traffic.latest)
+        print("live interface rate:", Double(latest.bytesPerSecond) * 8 / 1_000_000, "Mbit/s")
+    }
+}
