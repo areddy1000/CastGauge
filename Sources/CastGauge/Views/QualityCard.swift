@@ -14,7 +14,9 @@ struct QualityCard: View {
     }
 
     private var summary: String {
-        "\(model.settings.maxRateMbps) Mbit/s · \(model.settings.bufferMs) ms · \(model.settings.frameRate) fps"
+        // "Mbps" keeps the summary on one line in the collapsed card.
+        "\(model.settings.maxRateMbps) Mbps · \(model.settings.bufferMs) ms · \(model.settings.frameRate) fps · "
+            + (model.settings.remoting ? "Remoting" : "Mirror")
     }
 
     var body: some View {
@@ -30,6 +32,8 @@ struct QualityCard: View {
                         Text(summary)
                             .font(MaterialType.font(13))
                             .foregroundStyle(MaterialColor.onSurfaceVariant)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
                     }
                     Spacer()
                     Symbol("chevron_right", size: 22)
@@ -65,7 +69,20 @@ struct QualityCard: View {
                 .font(MaterialType.font(14))
                 .padding(.top, 12)
                 .padding(.bottom, 8)
-            SegmentedControl(selection: $model.settings.frameRate, options: MirrorSettings.frameRates) { "\($0) fps" }
+            // Remoting and 60 fps together make the test TV stop the cast, so each one grays out the other.
+            SegmentedControl(selection: $model.settings.frameRate, options: MirrorSettings.frameRates,
+                             isDisabled: { $0 == 60 && model.settings.remoting }) { "\($0) fps" }
+            Text("Fullscreen video")
+                .font(MaterialType.font(14))
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+            SegmentedControl(selection: $model.settings.remoting, options: [true, false],
+                             isDisabled: { $0 && model.settings.frameRate == 60 }) { $0 ? "Remoting" : "Mirror" }
+            Text(remotingNote)
+                .font(MaterialType.font(12))
+                .foregroundStyle(MaterialColor.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 6)
             stateLine
                 .padding(.top, 14)
             // The confirmation stays inside the panel. A system dialog takes the focus from the
@@ -86,6 +103,12 @@ struct QualityCard: View {
                     .padding(.top, 8)
             }
         }
+    }
+
+    private var remotingNote: String {
+        if model.settings.frameRate == 60 { return "60 fps stops remoting on this TV. Select 30 fps to use it." }
+        if model.settings.remoting { return "Remoting plays fullscreen video on the TV at its own frame rate." }
+        return "Fullscreen video is mirrored like the rest of the tab."
     }
 
     private var stateLine: some View {
@@ -259,12 +282,23 @@ struct MaterialSlider: View {
 struct SegmentedControl<Option: Hashable>: View {
     @Binding var selection: Option
     let options: [Option]
+    /// True grays out a choice that cannot work with the other settings.
+    var isDisabled: (Option) -> Bool = { _ in false }
     let title: (Option) -> String
+
+    init(selection: Binding<Option>, options: [Option], isDisabled: @escaping (Option) -> Bool = { _ in false },
+         title: @escaping (Option) -> String) {
+        _selection = selection
+        self.options = options
+        self.isDisabled = isDisabled
+        self.title = title
+    }
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Array(options.enumerated()), id: \.element) { index, option in
                 let selected = option == selection
+                let disabled = isDisabled(option) && !selected
                 Button {
                     withAnimation(MaterialMotion.emphasized) { selection = option }
                 } label: {
@@ -274,10 +308,12 @@ struct SegmentedControl<Option: Hashable>: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 34)
                     .foregroundStyle(selected ? MaterialColor.onPrimaryContainer : MaterialColor.onSurface)
+                    .opacity(disabled ? 0.38 : 1)
                     .background(selected ? MaterialColor.primaryContainer : Color.clear)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(disabled)
                 .accessibilityAddTraits(selected ? .isSelected : [])
                 if index < options.count - 1 {
                     Rectangle().fill(MaterialColor.outline).frame(width: 1)

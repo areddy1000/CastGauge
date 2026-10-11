@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import CastGaugeKit
 
@@ -27,7 +28,7 @@ struct MirrorSettingsTests {
     }
 
     @Test func parsesItsOwnArguments() {
-        let s = MirrorSettings(maxRateMbps: 12, bufferMs: 400, frameRate: 60)
+        let s = MirrorSettings(maxRateMbps: 12, bufferMs: 400, frameRate: 60, remoting: false)
         let chromeArgv = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
             + s.openArguments().drop(while: { $0 != "--args" }).dropFirst()
         #expect(MirrorSettings.parse(chromeArguments: Array(chromeArgv)) == s)
@@ -46,5 +47,31 @@ struct MirrorSettingsTests {
     @Test func clampsOutOfRangeValues() {
         #expect(MirrorSettings(maxRateMbps: 50, bufferMs: 5, frameRate: 45).clamped()
                 == MirrorSettings(maxRateMbps: 20, bufferMs: 100, frameRate: 30))
+    }
+
+    // The remoting choice: Chrome turns remoting on by default, so only "off" needs a switch.
+    @Test func mirrorAddsTheRemotingSwitch() {
+        let args = MirrorSettings(maxRateMbps: 20, bufferMs: 600, frameRate: 30, remoting: false).openArguments()
+        #expect(args.contains("--disable-features=MediaRemoting"))
+    }
+
+    // At 60 fps the TV ignores the remoting offer and Chrome stops the cast. Never send both.
+    @Test func sixtyFramesNeverSendRemoting() {
+        let settings = MirrorSettings(maxRateMbps: 20, bufferMs: 600, frameRate: 60, remoting: true)
+        #expect(settings.openArguments().contains("--disable-features=MediaRemoting"))
+        #expect(settings.clamped().remoting == false)
+    }
+
+    @Test func readsRemotingFromChrome() {
+        let base = ["Google Chrome", "--castgauge-playout-delay=600"]
+        #expect(MirrorSettings.parse(chromeArguments: base)?.remoting == true)
+        #expect(MirrorSettings.parse(chromeArguments: base + ["--disable-features=MediaRemoting"])?.remoting == false)
+    }
+
+    // Settings saved before the switch existed load with remoting on, the Chrome default.
+    @Test func oldSavedSettingsLoadWithRemoting() throws {
+        let json = #"{"maxRateMbps":20,"bufferMs":600,"frameRate":30}"#
+        let settings = try JSONDecoder().decode(MirrorSettings.self, from: Data(json.utf8))
+        #expect(settings.remoting == true)
     }
 }

@@ -9,11 +9,33 @@ public struct MirrorSettings: Equatable, Codable, Sendable {
     public var bufferMs: Int
     /// The maximum frame rate. It is 30 or 60.
     public var frameRate: Int
+    /// True lets Chrome remote a fullscreen video: the TV plays the video file itself.
+    /// It cannot be on at 60 fps, because the test TV then ignores the remoting offer.
+    public var remoting: Bool
 
-    public init(maxRateMbps: Int, bufferMs: Int, frameRate: Int) {
+    public init(maxRateMbps: Int, bufferMs: Int, frameRate: Int, remoting: Bool = true) {
         self.maxRateMbps = maxRateMbps
         self.bufferMs = bufferMs
         self.frameRate = frameRate
+        self.remoting = remoting
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case maxRateMbps, bufferMs, frameRate, remoting
+    }
+
+    /// Settings saved before the remoting choice existed load with remoting on, the Chrome default.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        maxRateMbps = try container.decode(Int.self, forKey: .maxRateMbps)
+        bufferMs = try container.decode(Int.self, forKey: .bufferMs)
+        frameRate = try container.decode(Int.self, forKey: .frameRate)
+        remoting = try container.decodeIfPresent(Bool.self, forKey: .remoting) ?? true
+    }
+
+    /// False when 60 fps blocks remoting. Only this value reaches Chrome.
+    var remotingAllowed: Bool {
+        remoting && frameRate != 60
     }
 
     /// The Chrome default rate, with the default CastGauge buffer.
@@ -33,10 +55,12 @@ public struct MirrorSettings: Equatable, Codable, Sendable {
 
     /// Returns a copy with each value in its allowed range.
     public func clamped() -> MirrorSettings {
-        MirrorSettings(
+        let frameRate = frameRate == 60 ? 60 : 30
+        return MirrorSettings(
             maxRateMbps: min(max(maxRateMbps, Self.maxRateRange.lowerBound), Self.maxRateRange.upperBound),
             bufferMs: min(max(bufferMs, Self.bufferRange.lowerBound), Self.bufferRange.upperBound),
-            frameRate: frameRate == 60 ? 60 : 30
+            frameRate: frameRate,
+            remoting: remoting && frameRate != 60
         )
     }
 
@@ -52,9 +76,9 @@ public struct MirrorSettings: Equatable, Codable, Sendable {
             "--args", "--restore-last-session",
             "--enable-features=\(features)",
         ]
-        // At 60 fps the TV ignores the "remoting" offer (the fullscreen video mode), and Chrome
-        // then stops the cast. Plain mirroring at 60 fps works, so turn remoting off.
-        if frameRate == 60 {
+        // Chrome remotes by default. At 60 fps the TV ignores the remoting offer, and Chrome
+        // then stops the cast, so 60 fps always turns remoting off.
+        if !remotingAllowed {
             arguments.append("--disable-features=\(Self.remotingFeature)")
         }
         arguments.append("\(Self.markerSwitch)\(bufferMs)")
@@ -79,6 +103,10 @@ public struct MirrorSettings: Equatable, Codable, Sendable {
             rate = value
         }
         let frameRate = features.contains(frameRateFeature) ? 60 : 30
-        return MirrorSettings(maxRateMbps: rate, bufferMs: buffer, frameRate: frameRate)
+        let disabled = chromeArguments
+            .filter { $0.hasPrefix("--disable-features=") }
+            .flatMap { $0.dropFirst("--disable-features=".count).split(separator: ",").map(String.init) }
+        return MirrorSettings(maxRateMbps: rate, bufferMs: buffer, frameRate: frameRate,
+                              remoting: !disabled.contains(remotingFeature))
     }
 }

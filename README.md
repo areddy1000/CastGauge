@@ -14,8 +14,13 @@ It also sets the Chrome mirror quality when Chrome starts.
   and the media title that the device reports. CastGauge only reads this status on port 8009.
   It never sends a playback command.
 - The panel shows the rate against the maximum, the delay, the loss, and the Mac Wi-Fi signal.
-- The Quality card sets the maximum rate (5 to 20 Mbit/s), the buffer (100 to 1000 ms), and the
-  frame rate (30 or 60 fps).
+- The Quality card sets the maximum rate (5 to 20 Mbit/s), the buffer (100 to 1000 ms), the
+  frame rate (30 or 60 fps), and the fullscreen video mode:
+  - Remoting: Chrome may send a fullscreen video file to the TV, which plays it at its own frame
+    rate. Chrome decides when: the video plays, is long enough, has no copy protection, and has
+    a supported format.
+  - Mirror: fullscreen video is mirrored like the rest of the tab.
+  - Remoting and 60 fps gray out each other, because the test TV stops the cast with both.
 
 ## How the quality settings work
 
@@ -27,7 +32,7 @@ way (the same as Cmd-Q) and starts it again with:
 | Maximum rate | `--enable-features=CastStreamingMaxVideoBitrate:max_bitrate_mbps/<n>` |
 | 60 fps | `CastStreaming60fps` in the same `--enable-features` list |
 | Buffer | environment variable `CHROME_MIRRORING_PLAYOUT_DELAY=<ms>` |
-| No remoting at 60 fps | `--disable-features=MediaRemoting` |
+| Mirror, or 60 fps | `--disable-features=MediaRemoting` |
 | Marker | `--castgauge-playout-delay=<ms>`. Chrome ignores it. CastGauge reads it back. |
 
 At 60 fps, the test TV (Chromecast with Google TV) did not answer the "remoting" offer. Chrome
