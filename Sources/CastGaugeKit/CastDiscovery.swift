@@ -38,7 +38,8 @@ public final class CastDiscovery: Sendable {
         var browser: NWBrowser?
         var devices: [String: CastDevice] = [:]
         var addresses: [String: String] = [:]
-        var resolving: Set<String> = []
+        var resolving: [String: UUID] = [:]
+        var endpoints: [String: NWEndpoint] = [:]
         var permissionDenied = false
     }
 
@@ -99,9 +100,9 @@ public final class CastDiscovery: Sendable {
         }
         let toResolve = state.withLock { s -> [(String, NWEndpoint)] in
             s.devices = found.mapValues(\.0)
+            s.endpoints = found.mapValues(\.1)
             s.addresses = s.addresses.filter { found[$0.key] != nil }
-            let missing = found.filter { s.addresses[$0.key] == nil && !s.resolving.contains($0.key) }
-            s.resolving.formUnion(missing.keys)
+            let missing = found.filter { s.addresses[$0.key] == nil && s.resolving[$0.key] == nil }
             return missing.map { ($0.key, $0.value.1) }
         }
         for (id, endpoint) in toResolve {
@@ -109,8 +110,24 @@ public final class CastDiscovery: Sendable {
         }
     }
 
+    /// Tries the resolve again after 3 seconds, while the device is still in the browse results.
+    private func retry(id: String) {
+        queue.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self else { return }
+            let endpoint = self.state.withLock { s -> NWEndpoint? in
+                guard s.browser != nil, s.addresses[id] == nil, s.resolving[id] == nil,
+                      let endpoint = s.endpoints[id] else { return nil }
+                return endpoint
+            }
+            if let endpoint { self.resolve(id: id, endpoint: endpoint) }
+        }
+    }
+
     /// Opens a short TCP connection to the service to learn its IPv4 address.
+    /// Each attempt has a token, so a late event from an old attempt changes nothing.
     private func resolve(id: String, endpoint: NWEndpoint) {
+        let token = UUID()
+        state.withLock { $0.resolving[id] = token }
         let parameters = NWParameters.tcp
         if let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
             ip.version = .v4
@@ -123,18 +140,37 @@ public final class CastDiscovery: Sendable {
                 if case .hostPort(let host, _)? = connection.currentPath?.remoteEndpoint {
                     address = "\(host)".split(separator: "%").first.map(String.init)
                 }
-                self?.state.withLock { s in
-                    s.resolving.remove(id)
-                    if let address { s.addresses[id] = address }
-                }
                 connection.cancel()
-            case .failed, .waiting:
-                self?.state.withLock { _ = $0.resolving.remove(id) }
+                self?.finish(id: id, token: token, address: address, error: nil)
+            case .failed(let error), .waiting(let error):
                 connection.cancel()
+                self?.finish(id: id, token: token, address: nil, error: error)
             default:
                 break
             }
         }
         connection.start(queue: queue)
+        // A connection can wait with no event, for example while macOS asks for Local Network access.
+        queue.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard connection.state != .ready else { return }
+            connection.cancel()
+            self?.finish(id: id, token: token, address: nil, error: nil)
+        }
+    }
+
+    private func finish(id: String, token: UUID, address: String?, error: NWError?) {
+        let current = state.withLock { s -> Bool in
+            guard s.resolving[id] == token else { return false }
+            s.resolving[id] = nil
+            if let address {
+                s.addresses[id] = address
+                s.permissionDenied = false
+            } else if case .dns(let code)? = error, code == kDNSServiceErr_PolicyDenied {
+                // macOS refuses local connections when Local Network access is off.
+                s.permissionDenied = true
+            }
+            return true
+        }
+        if current && address == nil { retry(id: id) }
     }
 }
