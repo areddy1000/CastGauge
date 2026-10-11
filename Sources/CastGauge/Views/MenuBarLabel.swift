@@ -17,7 +17,7 @@ struct MenuBarLabel: View {
     private var content: some View {
         if let playing = model.nowPlaying {
             HStack {
-                Image(nsImage: model.nowPlayingIcon ?? Self.tvIcon(dot: nil))
+                Image(nsImage: model.nowPlayingIcon ?? Self.castIcon(connected: true, dot: nil))
                 Text(Self.truncated(playing.title))
                     // The same font the system clock uses in the menu bar.
                     .font(Font(NSFont.menuBarFont(ofSize: 0)))
@@ -26,14 +26,14 @@ struct MenuBarLabel: View {
         } else if let device = model.device, model.health != .notCasting {
             // The TV name shows only during a tab cast. At rest, the label is the icon only.
             HStack {
-                Image(nsImage: Self.tvIcon(dot: Self.color(for: model.health)))
+                Image(nsImage: Self.castIcon(connected: true, dot: Self.color(for: model.health)))
                 Text(Self.truncated(device.name))
                     .font(Font(NSFont.menuBarFont(ofSize: 0)))
             }
             .accessibilityLabel("CastGauge, \(device.name), \(Self.healthText(model.health))")
         } else {
             // No text follows the icon, so it needs no right margin.
-            Image(nsImage: Self.tvIcon(dot: nil, margin: 0))
+            Image(nsImage: Self.castIcon(connected: false, dot: nil, margin: 0))
                 .accessibilityLabel("CastGauge, not casting")
         }
     }
@@ -47,13 +47,16 @@ struct MenuBarLabel: View {
     private static var iconCache: [String: NSImage] = [:]
     private static let iconFont = CTFontCreateWithName("Material Symbols Rounded" as CFString, side, nil)
 
-    /// The Material "tv" icon in the menu bar text color, with an optional health dot.
-    static func tvIcon(dot: NSColor?, margin: CGFloat = margin) -> NSImage {
-        let key = (dot?.description ?? "none") + "-\(margin)"
+    /// The Cast icon in the menu bar text color, with an optional health dot.
+    /// It is the symbol of the Cast button in Chrome, so it reads as a Chromecast at once.
+    /// The connected form fills the waves while something casts.
+    static func castIcon(connected: Bool, dot: NSColor?, margin: CGFloat = margin) -> NSImage {
+        let name = connected ? "cast_connected" : "cast"
+        let key = name + (dot?.description ?? "none") + "-\(margin)"
         if let cached = iconCache[key] { return cached }
         let image = NSImage(size: NSSize(width: side + margin, height: side), flipped: false) { _ in
             // The menu bar sets the drawing appearance, so labelColor matches a light or dark menu bar.
-            let glyph = NSAttributedString(string: "tv", attributes: [.font: iconFont, .foregroundColor: NSColor.labelColor])
+            let glyph = NSAttributedString(string: name, attributes: [.font: iconFont, .foregroundColor: NSColor.labelColor])
             let size = glyph.size()
             glyph.draw(at: NSPoint(x: (side - size.width) / 2, y: (side - size.height) / 2))
             if let dot {
