@@ -55,3 +55,14 @@ extension LiveTests {
         #expect(state != .notRunning)
     }
 }
+
+extension LiveTests {
+    @Test func readsTheCastStatus() async throws {
+        let monitor = CastStatusMonitor(address: tv)
+        monitor.start()
+        defer { monitor.stop() }
+        try await Task.sleep(for: .seconds(4))
+        print("live now playing:", monitor.nowPlaying as Any, "app:", monitor.app as Any)
+        #expect(monitor.app != nil)
+    }
+}

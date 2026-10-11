@@ -1,3 +1,4 @@
+import AppKit
 import CastGaugeKit
 import Foundation
 import Observation
@@ -19,6 +20,10 @@ final class GaugeModel {
     var isRestarting = false
     /// Always nil in version 1. A later TV signal source fills it.
     var tvSignalDbm: Int?
+    /// The app and title that the Cast device reports, or nil for no app, idle, or a tab mirror.
+    var nowPlaying: NowPlaying?
+    /// The icon of the now-playing app, after it loads.
+    var nowPlayingIcon: NSImage?
 
     /// The rate in Mbit/s, or nil when no fresh value exists.
     var rateMbps: Double? {
@@ -31,6 +36,9 @@ final class GaugeModel {
     private var traffic: TrafficMonitor?
     private var link: LinkMonitor?
     private var monitoredAddress: String?
+    private var status: CastStatusMonitor?
+    private var statusAddress: String?
+    private var iconCache: [URL: NSImage] = [:]
     private var lastRate: (bytesPerSecond: Int, at: Date)?
     private var previousRate: (bytesPerSecond: Int, at: Date)?
     private var sampler: Task<Void, Never>?
@@ -71,6 +79,8 @@ final class GaugeModel {
         device = CastDevice.pick(devices) ?? devices.first
         let casting = device?.isMirroring ?? false
         follow(casting ? device?.address : nil)
+        followStatus(device?.address)
+        updateNowPlaying(status?.nowPlaying)
 
         if let rate = traffic?.latest, rate.at != lastRate?.at {
             previousRate = lastRate
@@ -100,6 +110,35 @@ final class GaugeModel {
         link.start()
         self.traffic = traffic
         self.link = link
+    }
+
+    /// Reads the app status from the device, idle or not.
+    private func followStatus(_ address: String?) {
+        guard address != statusAddress else { return }
+        status?.stop()
+        status = nil
+        statusAddress = address
+        guard let address else { return }
+        let status = CastStatusMonitor(address: address)
+        status.start()
+        self.status = status
+    }
+
+    private func updateNowPlaying(_ playing: NowPlaying?) {
+        guard playing != nowPlaying else { return }
+        nowPlaying = playing
+        nowPlayingIcon = playing?.iconURL.flatMap { iconCache[$0] }
+        guard let url = playing?.iconURL, iconCache[url] == nil else { return }
+        Task { [weak self] in
+            // Some devices report the icon over http. macOS blocks plain http, so use https.
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            components?.scheme = "https"
+            guard let secure = components?.url,
+                  let (data, _) = try? await URLSession.shared.data(from: secure),
+                  let image = NSImage(data: data), let self else { return }
+            self.iconCache[url] = image
+            if self.nowPlaying?.iconURL == url { self.nowPlayingIcon = image }
+        }
     }
 
     private static func loadSettings() -> MirrorSettings {
