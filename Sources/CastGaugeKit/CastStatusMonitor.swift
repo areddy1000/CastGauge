@@ -52,8 +52,8 @@ public final class CastStatusMonitor: Sendable {
         state.withLock { NowPlaying.from(app: $0.app, mediaTitle: $0.mediaTitle) }
     }
 
-    /// The app that the device reports, including a tab mirror. Tests use it.
-    var app: CastApp? {
+    /// The app that the device reports, including a tab mirror or a native Google TV app.
+    public var app: CastApp? {
         state.withLock { $0.app }
     }
 

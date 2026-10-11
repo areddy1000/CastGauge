@@ -33,3 +33,22 @@ struct DeviceListTests {
         #expect(object["requestId"] as? Int == 7)
     }
 }
+
+/// Google TV reports its foreground app, for example the Apple TV app, on the Cast status
+/// channel with the ID "AndroidNativeApp". That is not a cast.
+@Suite("NativeApps")
+struct NativeAppTests {
+    @Test func aNativeAppIsNotNowPlaying() {
+        let app = CastApp(id: "AndroidNativeApp", name: "Apple TV", iconURL: nil, statusText: "Apple TV",
+                          transportID: nil, isIdleScreen: false)
+        #expect(app.isNativeApp)
+        #expect(NowPlaying.from(app: app, mediaTitle: nil) == nil)
+    }
+
+    @Test func aDeviceWithANativeAppIsIdle() {
+        var device = CastDevice(id: "a", name: "Bedroom TV", isMirroring: false, address: nil, statusText: "Apple TV")
+        #expect(device.activity == .app("Apple TV"))
+        device.runsNativeApp = true
+        #expect(device.activity == .idle)
+    }
+}

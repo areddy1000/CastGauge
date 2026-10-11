@@ -57,6 +57,10 @@ final class GaugeModel {
     @ObservationIgnored private var monitoredAddress: String?
     @ObservationIgnored private var status: CastStatusMonitor?
     @ObservationIgnored private var statusAddress: String?
+    @ObservationIgnored private var statusDevice: CastDevice?
+    /// Devices that run a native Google TV app, keyed by ID, with the app name at that time.
+    /// The answer stays valid while the Bonjour app name stays the same.
+    @ObservationIgnored private var nativeApps: [String: String] = [:]
     @ObservationIgnored private var thumbnails: [URL: NSImage] = [:]
     @ObservationIgnored private var failedIcons: Set<URL> = []
     @ObservationIgnored private var loadingIcons: Set<URL> = []
@@ -118,7 +122,12 @@ final class GaugeModel {
     private func devicesChanged() {
         let denied = discovery.permissionDenied
         if denied != networkPermissionDenied { networkPermissionDenied = denied }
-        let devices = discovery.devices
+        var devices = discovery.devices
+        // A remembered native app counts only while the device still shows the same app name.
+        nativeApps = nativeApps.filter { id, name in devices.first { $0.id == id }?.statusText == name }
+        for index in devices.indices where nativeApps[devices[index].id] == devices[index].statusText {
+            devices[index].runsNativeApp = true
+        }
         if devices != self.devices { self.devices = devices }
         // Show the mirroring device. With no mirror, show an idle device so the header has a name.
         let picked = CastDevice.pick(devices) ?? devices.first
@@ -128,7 +137,7 @@ final class GaugeModel {
         // The status connection is open only while a device runs an app other than a tab mirror.
         // The Bonjour record already shows the idle state, so idle needs no connection.
         let appDevice = devices.first { if case .app = $0.activity { true } else { false } }
-        followStatus(appDevice?.address)
+        followStatus(appDevice)
         updateNowPlaying(status?.nowPlaying)
         if !casting, health != .notCasting {
             health = .notCasting
@@ -195,17 +204,30 @@ final class GaugeModel {
     }
 
     /// Opens the status connection to a device that runs an app, and closes it when none does.
-    private func followStatus(_ address: String?) {
+    private func followStatus(_ device: CastDevice?) {
+        statusDevice = device
+        let address = device?.address
         guard address != statusAddress else { return }
         status?.stop()
         status = nil
         statusAddress = address
         guard let address else { return }
         let status = CastStatusMonitor(address: address, onChange: { [weak self] in
-            Task { @MainActor in self?.updateNowPlaying(self?.status?.nowPlaying) }
+            Task { @MainActor in self?.statusChanged() }
         })
         status.start()
         self.status = status
+    }
+
+    /// A native Google TV app, such as the Apple TV app, is not a cast. Remember it, and let
+    /// devicesChanged close the connection, so it does not stay open while the app runs.
+    private func statusChanged() {
+        if let app = status?.app, app.isNativeApp, let device = statusDevice, let name = device.statusText {
+            nativeApps[device.id] = name
+            devicesChanged()
+            return
+        }
+        updateNowPlaying(status?.nowPlaying)
     }
 
     private func updateNowPlaying(_ playing: NowPlaying?) {

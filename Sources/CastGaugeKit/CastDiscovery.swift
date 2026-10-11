@@ -11,6 +11,9 @@ public struct CastDevice: Equatable, Sendable {
     public var address: String?
     /// The status text of the running app, from the `rs` record. Empty or nil when idle.
     public var statusText: String?
+    /// True when the running app is a native Google TV app, not a cast. The Bonjour record
+    /// cannot tell this, so the app sets it after one status read.
+    public var runsNativeApp = false
 
     public init(id: String, name: String, isMirroring: Bool, address: String?, statusText: String? = nil) {
         self.id = id
@@ -29,7 +32,7 @@ public struct CastDevice: Equatable, Sendable {
 
     public var activity: Activity {
         if isMirroring { return .castingTab }
-        guard let text = statusText, !text.isEmpty else { return .idle }
+        guard !runsNativeApp, let text = statusText, !text.isEmpty else { return .idle }
         return .app(text)
     }
 

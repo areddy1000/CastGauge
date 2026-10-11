@@ -119,6 +119,12 @@ public struct CastApp: Equatable, Sendable {
     public let isIdleScreen: Bool
     /// The session to name in a STOP request.
     public var sessionID: String? = nil
+
+    /// The app ID that Google TV reports for its own foreground app, for example the Apple TV app.
+    public static let nativeAppID = "AndroidNativeApp"
+
+    /// True for an app that runs on Google TV by itself. It is not a cast.
+    public var isNativeApp: Bool { id == Self.nativeAppID }
 }
 
 /// Cast requests that change the device state. CastGauge sends them only when the user asks.
@@ -183,10 +189,11 @@ public struct NowPlaying: Equatable, Sendable {
     /// The Chrome tab mirror apps. The menu bar shows the TV name for them, not an app.
     static let mirroringAppIDs: Set<String> = ["0F5096E8", "85CDB22F", "674A0243"]
 
-    /// Returns what to show for an app, or nil for no app, the idle screen, or a tab mirror.
+    /// Returns what to show for an app, or nil for no app, the idle screen, a tab mirror,
+    /// or a native Google TV app.
     /// Without a media title, the app name is the title.
     public static func from(app: CastApp?, mediaTitle: String?) -> NowPlaying? {
-        guard let app, !app.isIdleScreen, !mirroringAppIDs.contains(app.id) else { return nil }
+        guard let app, !app.isIdleScreen, !app.isNativeApp, !mirroringAppIDs.contains(app.id) else { return nil }
         return NowPlaying(appName: app.name, iconURL: app.iconURL, title: mediaTitle ?? app.name)
     }
 }
