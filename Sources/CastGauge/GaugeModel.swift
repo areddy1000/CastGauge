@@ -3,7 +3,12 @@ import CastGaugeKit
 import Foundation
 import Observation
 
-/// Collects the measurements once per second for the menu bar and the panel.
+/// Collects the measurements for the menu bar and the panel.
+///
+/// It costs almost nothing while it idles. Bonjour and the Cast status connection call it when
+/// something changes, so no timer runs with no cast and a closed panel. A 1 s tick runs only
+/// during a tab cast or while the panel shows. The panel-only values update only while the
+/// panel shows, so a closed panel does not draw.
 @MainActor
 @Observable
 final class GaugeModel {
@@ -13,7 +18,7 @@ final class GaugeModel {
     var wifi: WiFiStatus?
     var chromeState: ChromeState = .notRunning
     var settings: MirrorSettings {
-        didSet { save(settings) }
+        didSet { saveSoon() }
     }
     var networkPermissionDenied = false
     var restartError: RestartError?
@@ -22,7 +27,7 @@ final class GaugeModel {
     var tvSignalDbm: Int?
     /// The app and title that the Cast device reports, or nil for no app, idle, or a tab mirror.
     var nowPlaying: NowPlaying?
-    /// The icon of the now-playing app, after it loads.
+    /// The 16 pt menu bar image of the now-playing app icon, after it loads.
     var nowPlayingIcon: NSImage?
     /// Every Chromecast on the network, for the list when no tab cast runs.
     var devices: [CastDevice] = []
@@ -30,6 +35,14 @@ final class GaugeModel {
     var stopping: Set<String> = []
     /// The reason the last Stop request failed, or nil.
     var stopError: String?
+    /// True while the panel shows. The panel sets it.
+    var panelVisible = false {
+        didSet {
+            guard panelVisible != oldValue else { return }
+            if panelVisible { tick() }
+            updateTicker()
+        }
+    }
 
     /// The rate in Mbit/s, or nil when no fresh value exists.
     var rateMbps: Double? {
@@ -37,30 +50,38 @@ final class GaugeModel {
     }
 
     private static let settingsKey = "mirrorSettings"
-    private let discovery = CastDiscovery()
-    private let chrome = ChromeController()
-    private var traffic: TrafficMonitor?
-    private var link: LinkMonitor?
-    private var monitoredAddress: String?
-    private var status: CastStatusMonitor?
-    private var statusAddress: String?
-    private var iconCache: [URL: NSImage] = [:]
-    private var lastRate: (bytesPerSecond: Int, at: Date)?
-    private var previousRate: (bytesPerSecond: Int, at: Date)?
-    private var sampler: Task<Void, Never>?
+    @ObservationIgnored private var discovery: CastDiscovery!
+    @ObservationIgnored private let chrome = ChromeController()
+    @ObservationIgnored private var traffic: InterfaceTraffic?
+    @ObservationIgnored private var link: LinkMonitor?
+    @ObservationIgnored private var monitoredAddress: String?
+    @ObservationIgnored private var status: CastStatusMonitor?
+    @ObservationIgnored private var statusAddress: String?
+    @ObservationIgnored private var thumbnails: [URL: NSImage] = [:]
+    @ObservationIgnored private var failedIcons: Set<URL> = []
+    @ObservationIgnored private var loadingIcons: Set<URL> = []
+    @ObservationIgnored private var lastRate: (bytesPerSecond: Int, at: Date)?
+    @ObservationIgnored private var previousRate: (bytesPerSecond: Int, at: Date)?
+    @ObservationIgnored private var ticker: Task<Void, Never>?
+    @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var started = false
 
     init() {
         settings = Self.loadSettings()
+        discovery = CastDiscovery(onChange: { [weak self] in
+            Task { @MainActor in self?.devicesChanged() }
+        })
     }
 
     func start() {
-        guard sampler == nil else { return }
+        guard !started else { return }
+        started = true
         discovery.start()
-        sampler = Task { [weak self] in
-            while !Task.isCancelled {
-                self?.sample()
-                try? await Task.sleep(for: .seconds(1))
-            }
+        devicesChanged()
+        // Stop the ping tool at quit, so no child process can stay behind.
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil,
+                                               queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.link?.stop() }
         }
     }
 
@@ -93,32 +114,71 @@ final class GaugeModel {
         chromeState = chrome.state()
     }
 
-    private func sample() {
-        networkPermissionDenied = discovery.permissionDenied
+    /// Runs when Bonjour reports a change. It picks the device and starts or stops the monitors.
+    private func devicesChanged() {
+        let denied = discovery.permissionDenied
+        if denied != networkPermissionDenied { networkPermissionDenied = denied }
         let devices = discovery.devices
         if devices != self.devices { self.devices = devices }
         // Show the mirroring device. With no mirror, show an idle device so the header has a name.
-        device = CastDevice.pick(devices) ?? devices.first
-        let casting = device?.isMirroring ?? false
-        follow(casting ? device?.address : nil)
-        followStatus(device?.address)
+        let picked = CastDevice.pick(devices) ?? devices.first
+        if picked != device { device = picked }
+        let casting = picked?.isMirroring ?? false
+        follow(casting ? picked?.address : nil)
+        // The status connection is open only while a device runs an app other than a tab mirror.
+        // The Bonjour record already shows the idle state, so idle needs no connection.
+        let appDevice = devices.first { if case .app = $0.activity { true } else { false } }
+        followStatus(appDevice?.address)
         updateNowPlaying(status?.nowPlaying)
+        if !casting, health != .notCasting {
+            health = .notCasting
+            snapshot = Snapshot(casting: false, rateBps: nil, previousRateBps: nil, link: nil)
+        }
+        updateTicker()
+    }
 
+    /// The 1 s tick runs only during a tab cast or while the panel shows.
+    private func updateTicker() {
+        let needed = monitoredAddress != nil || panelVisible
+        if needed, ticker == nil {
+            ticker = Task { [weak self] in
+                while !Task.isCancelled {
+                    guard let self else { return }
+                    self.tick()
+                    // The tolerance lets macOS group this wakeup with others.
+                    try? await Task.sleep(for: .seconds(1), tolerance: .milliseconds(250))
+                }
+            }
+        } else if !needed, let ticker {
+            ticker.cancel()
+            self.ticker = nil
+        }
+    }
+
+    private func tick() {
+        let now = Date()
+        traffic?.sample(at: now)
         if let rate = traffic?.latest, rate.at != lastRate?.at {
             previousRate = lastRate
             lastRate = rate
         }
-        snapshot = Snapshot.make(casting: casting, rate: lastRate, previous: previousRate,
-                                 link: link?.latest, now: Date())
-        health = Health.classify(snapshot)
-        wifi = WiFiReader.read()
-        chromeState = chrome.state()
+        let casting = monitoredAddress != nil
+        let fresh = Snapshot.make(casting: casting, rate: lastRate, previous: previousRate,
+                                  link: link?.latest, now: now)
+        let newHealth = Health.classify(fresh)
+        if newHealth != health { health = newHealth }
+        // These values show only in the panel. A closed panel gets no writes, so it does not draw.
+        guard panelVisible else { return }
+        if fresh != snapshot { snapshot = fresh }
+        let newWifi = WiFiReader.read()
+        if newWifi != wifi { wifi = newWifi }
+        let newChrome = chrome.state()
+        if newChrome != chromeState { chromeState = newChrome }
     }
 
     /// Starts the monitors for a new address and stops the old ones.
     private func follow(_ address: String?) {
         guard address != monitoredAddress else { return }
-        traffic?.stop()
         link?.stop()
         traffic = nil
         link = nil
@@ -126,22 +186,24 @@ final class GaugeModel {
         previousRate = nil
         monitoredAddress = address
         guard let address else { return }
-        let traffic = TrafficMonitor(targetAddress: address)
+        let traffic = InterfaceTraffic(targetAddress: address)
+        traffic.sample()
         let link = LinkMonitor(targetAddress: address)
-        traffic.start()
         link.start()
         self.traffic = traffic
         self.link = link
     }
 
-    /// Reads the app status from the device, idle or not.
+    /// Opens the status connection to a device that runs an app, and closes it when none does.
     private func followStatus(_ address: String?) {
         guard address != statusAddress else { return }
         status?.stop()
         status = nil
         statusAddress = address
         guard let address else { return }
-        let status = CastStatusMonitor(address: address)
+        let status = CastStatusMonitor(address: address, onChange: { [weak self] in
+            Task { @MainActor in self?.updateNowPlaying(self?.status?.nowPlaying) }
+        })
         status.start()
         self.status = status
     }
@@ -149,17 +211,43 @@ final class GaugeModel {
     private func updateNowPlaying(_ playing: NowPlaying?) {
         guard playing != nowPlaying else { return }
         nowPlaying = playing
-        nowPlayingIcon = playing?.iconURL.flatMap { iconCache[$0] }
-        guard let url = playing?.iconURL, iconCache[url] == nil else { return }
+        nowPlayingIcon = playing?.iconURL.flatMap { thumbnails[$0] }
+        guard let url = playing?.iconURL, thumbnails[url] == nil,
+              !failedIcons.contains(url), !loadingIcons.contains(url) else { return }
+        loadingIcons.insert(url)
         Task { [weak self] in
             // Some devices report the icon over http. macOS blocks plain http, so use https.
             var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
             components?.scheme = "https"
-            guard let secure = components?.url,
-                  let (data, _) = try? await URLSession.shared.data(from: secure),
-                  let image = NSImage(data: data), let self else { return }
-            self.iconCache[url] = image
-            if self.nowPlaying?.iconURL == url { self.nowPlayingIcon = image }
+            let image: NSImage? = if let secure = components?.url,
+                                     let (data, _) = try? await URLSession.shared.data(from: secure) {
+                NSImage(data: data)
+            } else {
+                nil
+            }
+            guard let self else { return }
+            self.loadingIcons.remove(url)
+            // Keep only the small menu bar image, made one time. The full icon is not kept.
+            guard let image, let thumbnail = MenuBarLabel.thumbnail(image) else {
+                self.failedIcons.insert(url)
+                return
+            }
+            if self.thumbnails.count >= 8 { self.thumbnails.removeAll() }
+            self.thumbnails[url] = thumbnail
+            if self.nowPlaying?.iconURL == url { self.nowPlayingIcon = thumbnail }
+        }
+    }
+
+    /// Saves the settings 0.5 s after the last change, not on each slider step.
+    private func saveSoon() {
+        saveTask?.cancel()
+        let settings = settings
+        saveTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            if let data = try? JSONEncoder().encode(settings) {
+                UserDefaults.standard.set(data, forKey: Self.settingsKey)
+            }
         }
     }
 
@@ -169,11 +257,5 @@ final class GaugeModel {
             return .chromeDefault
         }
         return settings.clamped()
-    }
-
-    private func save(_ settings: MirrorSettings) {
-        if let data = try? JSONEncoder().encode(settings) {
-            UserDefaults.standard.set(data, forKey: Self.settingsKey)
-        }
     }
 }

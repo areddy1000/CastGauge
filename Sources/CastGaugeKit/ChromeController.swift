@@ -100,6 +100,13 @@ public struct ChromeController: Sendable {
                 try await Task.sleep(for: .milliseconds(250))
             }
         }
-        try app.launch(arguments: settings.clamped().openArguments())
+        // `open` can take a second or two. Wait on a GCD thread, not on a Swift concurrency thread.
+        let arguments = settings.clamped().openArguments()
+        let app = app
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(with: Result { try app.launch(arguments: arguments) })
+            }
+        }
     }
 }

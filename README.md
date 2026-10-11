@@ -41,8 +41,10 @@ If you later open Chrome from the Dock, Chrome uses its defaults again. The pane
 
 ## How it measures
 
-- The rate: `nettop`, for the Chrome flows to the TV. Chrome sends the cast stream from an
-  unconnected UDP socket, so CastGauge also counts unconnected Chrome UDP flows.
+- The rate: the upload byte counter of the network interface that reaches the TV, read once
+  per second. It needs no helper process. It counts all the Mac uploads on that interface;
+  during a tab cast, the cast stream is almost all of them. (Version 1 used `nettop`, which cost
+  more than one CPU core during a cast.)
 - The delay and the loss: `ping` to the TV, over the last 10 replies.
 - The TV: Bonjour (`_googlecast._tcp`). The TV reports `rs=Chrome Mirroring` during a mirror.
 - The Mac Wi-Fi: CoreWLAN.
@@ -61,6 +63,23 @@ scripts/test.sh               # runs the unit tests
 CASTGAUGE_LIVE_TV=192.168.1.155 scripts/test.sh --filter Live   # checks with the real TV
 dist/CastGauge.app/Contents/MacOS/CastGauge --snapshot panel.png [--dark] [--expanded]
 ```
+
+## Background cost
+
+CastGauge runs all day, so it idles at almost no cost:
+
+- With no tab cast and a closed panel, no timer runs. Bonjour tells the app about changes.
+- A connection to a Cast device is open only while that device runs an app, such as YouTube.
+  The Bonjour record already shows an idle device.
+- During a tab cast, a 1 s tick reads one byte counter and the last `ping` result.
+- The panel values and the Wi-Fi read update only while the panel shows.
+- Each retry waits longer after each failure, up to 5 minutes.
+
+The menu bar item shows only while a Chromecast is on the network. The first launch turns on
+Open at Login. The panel footer has a switch for it.
+
+The icon font is a subset with only the icons that the app uses. To add an icon, run
+`scripts/subset-icons.py` on the full Material Symbols Rounded font with the new list of names.
 
 ## Not in version 1
 

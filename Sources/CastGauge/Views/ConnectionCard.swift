@@ -18,7 +18,6 @@ struct ConnectionCard: View {
                 Text(model.rateMbps.map { String(format: "%.1f", $0) } ?? "—")
                     .font(MaterialType.font(32, weight: .medium))
                     .monospacedDigit()
-                    .contentTransition(.numericText())
                 Text("of \(activeMax) Mbit/s")
                     .font(MaterialType.font(14))
                     .foregroundStyle(MaterialColor.onSurfaceVariant)
@@ -44,7 +43,6 @@ struct ConnectionCard: View {
             .padding(.top, 12)
         }
         .card()
-        .animation(MaterialMotion.emphasized, value: model.rateMbps)
     }
 }
 
@@ -58,6 +56,8 @@ struct LinearBar: View {
                 Capsule().fill(MaterialColor.primaryContainer)
                 Capsule().fill(MaterialColor.primary)
                     .frame(width: max(geometry.size.width * fraction, fraction > 0 ? 6 : 0))
+                    // Only the bar animates. The panel gets no writes while it is closed.
+                    .animation(MaterialMotion.emphasized, value: fraction)
             }
         }
         .frame(height: 6)

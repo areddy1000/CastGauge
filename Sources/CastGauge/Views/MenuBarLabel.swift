@@ -16,7 +16,7 @@ struct MenuBarLabel: View {
     private var content: some View {
         if let playing = model.nowPlaying {
             HStack {
-                Image(nsImage: Self.thumbnail(model.nowPlayingIcon) ?? Self.tvIcon(dot: nil))
+                Image(nsImage: model.nowPlayingIcon ?? Self.tvIcon(dot: nil))
                 Text(Self.truncated(playing.title))
                     // The same font the system clock uses in the menu bar.
                     .font(Font(NSFont.menuBarFont(ofSize: 0)))
@@ -40,12 +40,17 @@ struct MenuBarLabel: View {
     private static let side: CGFloat = 16
     private static let margin: CGFloat = 6
 
+    /// The four icon images, made one time each. A body evaluation reuses them.
+    private static var iconCache: [String: NSImage] = [:]
+    private static let iconFont = CTFontCreateWithName("Material Symbols Rounded" as CFString, side, nil)
+
     /// The Material "tv" icon in the menu bar text color, with an optional health dot.
     static func tvIcon(dot: NSColor?) -> NSImage {
+        let key = dot?.description ?? "none"
+        if let cached = iconCache[key] { return cached }
         let image = NSImage(size: NSSize(width: side + margin, height: side), flipped: false) { _ in
             // The menu bar sets the drawing appearance, so labelColor matches a light or dark menu bar.
-            let font = CTFontCreateWithName("Material Symbols Rounded" as CFString, side, nil)
-            let glyph = NSAttributedString(string: "tv", attributes: [.font: font, .foregroundColor: NSColor.labelColor])
+            let glyph = NSAttributedString(string: "tv", attributes: [.font: iconFont, .foregroundColor: NSColor.labelColor])
             let size = glyph.size()
             glyph.draw(at: NSPoint(x: (side - size.width) / 2, y: (side - size.height) / 2))
             if let dot {
@@ -60,6 +65,7 @@ struct MenuBarLabel: View {
             return true
         }
         image.isTemplate = false
+        iconCache[key] = image
         return image
     }
 

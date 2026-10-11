@@ -7,15 +7,6 @@ import Testing
 struct LiveTests {
     let tv = ProcessInfo.processInfo.environment["CASTGAUGE_LIVE_TV"] ?? ""
 
-    @Test func measuresChromeTraffic() async throws {
-        let monitor = TrafficMonitor(targetAddress: tv)
-        monitor.start()
-        defer { monitor.stop() }
-        try await Task.sleep(for: .seconds(5))
-        let latest = try #require(monitor.latest)
-        print("live traffic:", latest.bytesPerSecond, "bytes/s =", Double(latest.bytesPerSecond) * 8 / 1_000_000, "Mbit/s")
-        #expect(Date().timeIntervalSince(latest.at) < 3)
-    }
 }
 
 extension LiveTests {

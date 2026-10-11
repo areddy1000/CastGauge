@@ -5,26 +5,6 @@ import Testing
 
 @Suite("MonitorRestart")
 struct MonitorRestartTests {
-    let sample = [",bytes_out,", "Google Chrome H.1,700,", "udp4 *:5000<->*:*,700000,"]
-
-    // After a nettop restart, the first full sample holds the totals since the flow opened.
-    @Test func restartSkipsTheCumulativeSample() {
-        var traffic = TrafficAccumulator(targetAddress: "192.168.1.155")
-        traffic.launched()
-        (sample + sample + [",bytes_out,"]).forEach { traffic.feed($0, at: Date()) }
-        #expect(traffic.latest?.bytesPerSecond == 700_000)
-
-        traffic.launched()
-        // The old process left a partial sample. The new process starts with a cumulative sample.
-        traffic.feed("udp4 *:5000<->*:*,999,", at: Date())
-        [",bytes_out,", "Google Chrome H.1,9,", "udp4 *:5000<->*:*,1075000000,", ",bytes_out,"]
-            .forEach { traffic.feed($0, at: Date()) }
-        #expect(traffic.latest?.bytesPerSecond == 700_000)
-        ["Google Chrome H.1,9,", "udp4 *:5000<->*:*,650000,", ",bytes_out,"]
-            .forEach { traffic.feed($0, at: Date()) }
-        #expect(traffic.latest?.bytesPerSecond == 650_000)
-    }
-
     // A tool that writes nothing for the silence limit gets stopped, and LineProcess starts it again.
     @Test func restartsASilentTool() async throws {
         let launches = Mutex(0)

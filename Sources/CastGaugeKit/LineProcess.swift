@@ -61,10 +61,17 @@ public final class LineProcess: Sendable {
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
+        // A GUI app has /dev/null as stdin. A tool that reads stdin gets EOF at once and can
+        // spin on it, so give it an open pipe. The process keeps the pipe until it ends.
+        process.standardInput = Pipe()
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let chunk = handle.availableData
-            guard let self, !chunk.isEmpty else { return }
-            self.receive(chunk)
+            // Empty data means EOF. Without this, the handler runs again and again until exit.
+            guard !chunk.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
+            self?.receive(chunk)
         }
         process.terminationHandler = { [weak self] _ in
             pipe.fileHandleForReading.readabilityHandler = nil

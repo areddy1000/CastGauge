@@ -30,7 +30,7 @@ struct Panel: View {
             .scrollBounceBehavior(.basedOnSize)
             .frame(width: 340, height: panelHeight)
             .background(MaterialColor.surface)
-            .background(WindowHeightSync(height: panelHeight))
+            .background(WindowHeightSync(height: panelHeight) { model.panelVisible = $0 })
         } else {
             content
         }
@@ -112,17 +112,48 @@ struct PermissionCard: View {
 /// the window keeps its old height, the content moves down, and empty space shows.
 struct WindowHeightSync: NSViewRepresentable {
     let height: CGFloat
+    /// Called with true when the panel window shows, and false when it hides.
+    /// The menu bar window stays alive while closed, so the occlusion state tells.
+    var onVisibilityChange: (Bool) -> Void = { _ in }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSView { NSView() }
 
     func updateNSView(_ view: NSView, context: Context) {
         let height = height
+        context.coordinator.onVisibilityChange = onVisibilityChange
         DispatchQueue.main.async {
             guard let window = view.window else { return }
+            context.coordinator.watch(window)
             let content = window.contentRect(forFrameRect: window.frame)
             guard abs(content.height - height) > 0.5 else { return }
             let target = NSRect(x: content.minX, y: content.maxY - height, width: content.width, height: height)
             window.setFrame(window.frameRect(forContentRect: target), display: true, animate: false)
+        }
+    }
+
+    /// Watches the occlusion state of the panel window. A selector observer goes away with
+    /// the coordinator, so it needs no remove step.
+    @MainActor
+    final class Coordinator: NSObject {
+        var onVisibilityChange: (Bool) -> Void = { _ in }
+        private weak var window: NSWindow?
+
+        func watch(_ window: NSWindow) {
+            guard self.window !== window else { return }
+            if let old = self.window {
+                NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: old)
+            }
+            self.window = window
+            NotificationCenter.default.addObserver(self, selector: #selector(occlusionChanged(_:)),
+                                                   name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            onVisibilityChange(window.occlusionState.contains(.visible))
+        }
+
+        @objc private func occlusionChanged(_ notification: Notification) {
+            guard let window = notification.object as? NSWindow else { return }
+            onVisibilityChange(window.occlusionState.contains(.visible))
         }
     }
 }

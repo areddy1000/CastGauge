@@ -47,9 +47,11 @@ public struct CastDevice: Equatable, Sendable {
 }
 
 /// Finds Cast devices with Bonjour and resolves their IPv4 addresses.
+/// It calls `onChange` after each change, so the app needs no timer to watch it.
 public final class CastDiscovery: Sendable {
     private let queue = DispatchQueue(label: "CastDiscovery")
     private let state = Locked(State())
+    private let onChange: @Sendable () -> Void
 
     private struct State: @unchecked Sendable {
         var browser: NWBrowser?
@@ -58,11 +60,18 @@ public final class CastDiscovery: Sendable {
         var resolving: [String: UUID] = [:]
         var endpoints: [String: NWEndpoint] = [:]
         var permissionDenied = false
+        /// The wait before the next resolve of each device that does not answer.
+        var resolveBackoff: [String: Backoff] = [:]
+        var browserBackoff = Backoff()
+        var stopped = false
     }
 
-    public init() {}
+    public init(onChange: @escaping @Sendable () -> Void = {}) {
+        self.onChange = onChange
+    }
 
     public func start() {
+        state.withLock { $0.stopped = false }
         let browser = NWBrowser(for: .bonjourWithTXTRecord(type: "_googlecast._tcp", domain: nil), using: .tcp)
         browser.stateUpdateHandler = { [weak self] newState in
             guard let self else { return }
@@ -73,7 +82,13 @@ public final class CastDiscovery: Sendable {
             } else {
                 denied = false
             }
-            self.state.withLock { $0.permissionDenied = denied }
+            let changed = self.state.withLock { s -> Bool in
+                defer { s.permissionDenied = denied }
+                if case .ready = newState { s.browserBackoff.reset() }
+                return s.permissionDenied != denied
+            }
+            if changed { self.onChange() }
+            if case .failed = newState { self.restartBrowserLater(after: browser) }
         }
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             self?.update(results)
@@ -85,6 +100,7 @@ public final class CastDiscovery: Sendable {
     public func stop() {
         let browser = state.withLock { s -> NWBrowser? in
             defer { s.browser = nil }
+            s.stopped = true
             return s.browser
         }
         browser?.cancel()
@@ -125,11 +141,32 @@ public final class CastDiscovery: Sendable {
         for (id, endpoint) in toResolve {
             resolve(id: id, endpoint: endpoint)
         }
+        onChange()
     }
 
-    /// Tries the resolve again after 3 seconds, while the device is still in the browse results.
+    /// A failed browser does not recover by itself. Start a new one after a growing wait.
+    private func restartBrowserLater(after old: NWBrowser) {
+        let delay = state.withLock { s -> TimeInterval? in
+            guard s.browser === old else { return nil }
+            s.browser = nil
+            return s.browserBackoff.next()
+        }
+        old.cancel()
+        guard let delay else { return }
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.state.withLock({ $0.browser == nil && !$0.stopped }) else { return }
+            self.start()
+        }
+    }
+
+    /// Tries the resolve again after a growing wait, while the device is still in the browse results.
     private func retry(id: String) {
-        queue.asyncAfter(deadline: .now() + 3) { [weak self] in
+        let delay = state.withLock { s -> TimeInterval in
+            var backoff = s.resolveBackoff[id] ?? Backoff(initial: 3, limit: 300)
+            defer { s.resolveBackoff[id] = backoff }
+            return backoff.next()
+        }
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
             let endpoint = self.state.withLock { s -> NWEndpoint? in
                 guard s.browser != nil, s.addresses[id] == nil, s.resolving[id] == nil,
@@ -182,12 +219,14 @@ public final class CastDiscovery: Sendable {
             if let address {
                 s.addresses[id] = address
                 s.permissionDenied = false
+                s.resolveBackoff[id] = nil
             } else if case .dns(let code)? = error, code == kDNSServiceErr_PolicyDenied {
                 // macOS refuses local connections when Local Network access is off.
                 s.permissionDenied = true
             }
             return true
         }
-        if current && address == nil { retry(id: id) }
+        guard current else { return }
+        if address == nil { retry(id: id) } else { onChange() }
     }
 }

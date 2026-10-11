@@ -6,6 +6,7 @@ import Security
 /// It only reads. It never sends a playback command.
 public final class CastStatusMonitor: Sendable {
     private let address: String
+    private let onChange: @Sendable () -> Void
     private let queue = DispatchQueue(label: "CastStatusMonitor")
     private let state = Locked(State())
     private static let sender = "sender-castgauge"
@@ -19,10 +20,13 @@ public final class CastStatusMonitor: Sendable {
         var mediaTitle: String?
         var mediaTransport: String?
         var requestID = 0
+        var backoff = Backoff()
     }
 
-    public init(address: String) {
+    /// `onChange` runs after the app or the title changes, so the app needs no timer to watch it.
+    public init(address: String, onChange: @escaping @Sendable () -> Void = {}) {
         self.address = address
+        self.onChange = onChange
     }
 
     public func start() {
@@ -64,6 +68,7 @@ public final class CastStatusMonitor: Sendable {
             guard let self else { return }
             switch newState {
             case .ready:
+                self.state.withLock { $0.backoff.reset() }
                 self.send(namespace: CastNamespace.connection, to: Self.receiver, ["type": "CONNECT"])
                 self.send(namespace: CastNamespace.receiver, to: Self.receiver, ["type": "GET_STATUS"])
                 self.receive(on: connection)
@@ -83,16 +88,18 @@ public final class CastStatusMonitor: Sendable {
     }
 
     private func reconnectLater(after old: NWConnection) {
-        let again = state.withLock { s -> Bool in
-            guard s.connection === old else { return false }
+        let delay = state.withLock { s -> TimeInterval? in
+            guard s.connection === old else { return nil }
             s.connection = nil
             s.app = nil
             s.mediaTitle = nil
             s.mediaTransport = nil
-            return s.running
+            // An unreachable TV gets a growing wait, not a new attempt every few seconds.
+            return s.running ? s.backoff.next() : nil
         }
-        guard again else { return }
-        queue.asyncAfter(deadline: .now() + 5) { [weak self] in
+        guard let delay else { return }
+        onChange()
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, self.state.withLock({ $0.running && $0.connection == nil }) else { return }
             self.connect()
         }
@@ -121,17 +128,27 @@ public final class CastStatusMonitor: Sendable {
     }
 
     private func consume(_ data: Data) {
-        let messages = state.withLock { s -> [CastMessage] in
+        let (messages, broken, connection) = state.withLock { s -> ([CastMessage], Bool, NWConnection?) in
             s.buffer.append(data)
             var messages: [CastMessage] = []
-            while s.buffer.count >= 4 {
-                let length = s.buffer.prefix(4).reduce(0) { $0 << 8 | Int($1) }
-                guard s.buffer.count >= 4 + length else { break }
-                let body = s.buffer.dropFirst(4).prefix(length)
-                if let message = try? CastMessage.decode(Data(body)) { messages.append(message) }
-                s.buffer = Data(s.buffer.dropFirst(4 + length))
+            var index = s.buffer.startIndex
+            while s.buffer.endIndex - index >= 4 {
+                let length = s.buffer[index..<index + 4].reduce(0) { $0 << 8 | Int($1) }
+                // The Cast protocol limits a message to 64 KiB. A larger length is a broken stream.
+                guard length <= 65_536 else { return ([], true, s.connection) }
+                guard s.buffer.endIndex - index >= 4 + length else { break }
+                if let message = try? CastMessage.decode(Data(s.buffer[index + 4..<index + 4 + length])) {
+                    messages.append(message)
+                }
+                index += 4 + length
             }
-            return messages
+            s.buffer.removeSubrange(s.buffer.startIndex..<index)
+            return (messages, false, s.connection)
+        }
+        if broken, let connection {
+            connection.cancel()
+            reconnectLater(after: connection)
+            return
         }
         messages.forEach(handle)
     }
@@ -155,9 +172,11 @@ public final class CastStatusMonitor: Sendable {
                 send(namespace: CastNamespace.connection, to: transport, ["type": "CONNECT"])
                 send(namespace: CastNamespace.media, to: transport, ["type": "GET_STATUS"])
             }
+            onChange()
         case CastNamespace.media:
             if let title = MediaStatus.parseTitle(message.payload) {
                 state.withLock { $0.mediaTitle = title }
+                onChange()
             }
         default:
             break
