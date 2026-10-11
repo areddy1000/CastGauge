@@ -9,7 +9,12 @@ let package = Package(
         .executable(name: "CastGauge", targets: ["CastGauge"]),
     ],
     targets: [
-        .target(name: "CastGaugeKit"),
+        .target(
+            name: "CastGaugeKit",
+            linkerSettings: [
+                .linkedFramework("CoreWLAN"),
+            ]
+        ),
         .executableTarget(
             name: "CastGauge",
             dependencies: ["CastGaugeKit"]

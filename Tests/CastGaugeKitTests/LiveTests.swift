@@ -29,3 +29,21 @@ extension LiveTests {
         #expect(stats.avgMs > 0)
     }
 }
+
+extension LiveTests {
+    @Test func findsTheMirroringTV() async throws {
+        let discovery = CastDiscovery()
+        discovery.start()
+        defer { discovery.stop() }
+        try await Task.sleep(for: .seconds(4))
+        print("live devices:", discovery.devices, "denied:", discovery.permissionDenied)
+        let picked = try #require(CastDevice.pick(discovery.devices))
+        #expect(picked.address == tv)
+    }
+
+    @Test func readsTheMacWiFi() throws {
+        let wifi = try #require(WiFiReader.read())
+        print("live wifi:", wifi)
+        #expect(wifi.rssi < 0)
+    }
+}
