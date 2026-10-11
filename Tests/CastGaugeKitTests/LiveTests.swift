@@ -47,3 +47,11 @@ extension LiveTests {
         #expect(wifi.rssi < 0)
     }
 }
+
+extension LiveTests {
+    @Test func readsTheRealChromeState() {
+        let state = ChromeController().state()
+        print("live chrome state:", state)
+        #expect(state != .notRunning)
+    }
+}
