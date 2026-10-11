@@ -17,3 +17,15 @@ struct LiveTests {
         #expect(Date().timeIntervalSince(latest.at) < 3)
     }
 }
+
+extension LiveTests {
+    @Test func measuresTheLink() async throws {
+        let monitor = LinkMonitor(targetAddress: tv)
+        monitor.start()
+        defer { monitor.stop() }
+        try await Task.sleep(for: .seconds(4))
+        let stats = try #require(monitor.latest)
+        print("live link:", stats.avgMs, "ms avg,", stats.jitterMs, "ms jitter,", stats.lossPercent, "% loss")
+        #expect(stats.avgMs > 0)
+    }
+}
