@@ -8,6 +8,12 @@ public struct WiFiStatus: Equatable, Sendable {
     public let noise: Int
     /// The band name, for example "5 GHz".
     public let band: String
+
+    public init(rssi: Int, noise: Int, band: String) {
+        self.rssi = rssi
+        self.noise = noise
+        self.band = band
+    }
 }
 
 /// Reads the Mac Wi-Fi link with CoreWLAN.

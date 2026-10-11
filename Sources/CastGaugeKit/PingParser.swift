@@ -34,6 +34,13 @@ public struct LinkStats: Equatable, Sendable {
     public let lossPercent: Double
     /// The time of the newest ping result.
     public let at: Date
+
+    public init(avgMs: Double, jitterMs: Double, lossPercent: Double, at: Date) {
+        self.avgMs = avgMs
+        self.jitterMs = jitterMs
+        self.lossPercent = lossPercent
+        self.at = at
+    }
 }
 
 /// Keeps the last ping results and calculates the link values.

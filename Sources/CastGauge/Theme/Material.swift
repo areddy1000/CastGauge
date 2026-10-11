@@ -13,6 +13,8 @@ enum MaterialColor {
     static let surfaceContainerHigh = dynamic(light: 0xE9EEF6, dark: 0x282A2C)
     /// The card fill: white in light mode, the container color in dark mode.
     static let card = dynamic(light: 0xFFFFFF, dark: 0x1E1F20)
+    /// The tile fill inside a card. It must differ from the card in both modes.
+    static let tile = dynamic(light: 0xF0F4F9, dark: 0x282A2C)
     static let onSurface = dynamic(light: 0x1F1F1F, dark: 0xE3E3E3)
     static let onSurfaceVariant = dynamic(light: 0x444746, dark: 0xC4C7C5)
     static let outline = dynamic(light: 0x747775, dark: 0x8E918F)
