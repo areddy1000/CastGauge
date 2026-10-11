@@ -4,6 +4,11 @@ import SwiftUI
 struct CastGaugeApp: App {
     @State private var model = GaugeModel()
 
+    init() {
+        registerBundledFonts()
+        PanelSnapshot.runIfRequested { Text("CastGauge") }
+    }
+
     var body: some Scene {
         MenuBarExtra {
             Text("CastGauge")
@@ -14,3 +19,4 @@ struct CastGaugeApp: App {
         .menuBarExtraStyle(.window)
     }
 }
+
