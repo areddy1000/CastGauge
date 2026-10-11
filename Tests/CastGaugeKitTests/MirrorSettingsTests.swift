@@ -10,8 +10,15 @@ struct MirrorSettingsTests {
             "--env", "CHROME_MIRRORING_PLAYOUT_DELAY=400",
             "--args", "--restore-last-session",
             "--enable-features=CastStreamingMaxVideoBitrate:max_bitrate_mbps/12,CastStreaming60fps",
+            "--disable-features=MediaRemoting",
             "--castgauge-playout-delay=400",
         ])
+    }
+
+    // At 60 fps the TV ignores the "remoting" offer, and Chrome stops the cast. Test of 2026-10-11.
+    @Test func keepsRemotingAt30() {
+        let args = MirrorSettings(maxRateMbps: 20, bufferMs: 600, frameRate: 30).openArguments()
+        #expect(!args.contains { $0.hasPrefix("--disable-features") })
     }
 
     @Test func leaves60fpsOutAt30() {

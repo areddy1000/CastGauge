@@ -19,6 +19,7 @@ struct PingParserTests {
             .forEach { w.add($0, at: t) }
         #expect(w.stats?.avgMs == 5)
         #expect(w.stats?.lossPercent == 25)
+        #expect(w.stats?.lostCount == 1)
         #expect(abs((w.stats?.jitterMs ?? 0) - 0.8165) < 0.001)
     }
 
@@ -26,6 +27,13 @@ struct PingParserTests {
         var w = LinkWindow(capacity: 2)
         [PingEvent.timeout(seq: 1), .reply(seq: 2, ms: 5), .reply(seq: 3, ms: 5)].forEach { w.add($0, at: Date()) }
         #expect(w.stats?.lossPercent == 0)
+    }
+
+    @Test func defaultWindowHoldsTenPings() {
+        var w = LinkWindow()
+        w.add(.timeout(seq: 0), at: Date())
+        (1...10).forEach { w.add(.reply(seq: $0, ms: 5), at: Date()) }
+        #expect(w.stats?.lostCount == 0)
     }
 
     @Test func emptyWindowHasNoStats() {

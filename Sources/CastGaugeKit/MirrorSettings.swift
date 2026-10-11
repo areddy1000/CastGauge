@@ -26,6 +26,7 @@ public struct MirrorSettings: Equatable, Codable, Sendable {
     static let rateFeature = "CastStreamingMaxVideoBitrate"
     static let rateParameter = "max_bitrate_mbps"
     static let frameRateFeature = "CastStreaming60fps"
+    static let remotingFeature = "MediaRemoting"
     static let bufferVariable = "CHROME_MIRRORING_PLAYOUT_DELAY"
     /// Chrome ignores this switch. CastGauge reads it back, because macOS hides the Chrome environment.
     static let markerSwitch = "--castgauge-playout-delay="
@@ -45,13 +46,19 @@ public struct MirrorSettings: Equatable, Codable, Sendable {
         if frameRate == 60 {
             features += ",\(Self.frameRateFeature)"
         }
-        return [
+        var arguments = [
             "-a", "Google Chrome",
             "--env", "\(Self.bufferVariable)=\(bufferMs)",
             "--args", "--restore-last-session",
             "--enable-features=\(features)",
-            "\(Self.markerSwitch)\(bufferMs)",
         ]
+        // At 60 fps the TV ignores the "remoting" offer (the fullscreen video mode), and Chrome
+        // then stops the cast. Plain mirroring at 60 fps works, so turn remoting off.
+        if frameRate == 60 {
+            arguments.append("--disable-features=\(Self.remotingFeature)")
+        }
+        arguments.append("\(Self.markerSwitch)\(bufferMs)")
+        return arguments
     }
 
     /// Reads the settings from a Chrome command line.

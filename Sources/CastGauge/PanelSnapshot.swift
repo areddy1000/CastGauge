@@ -31,7 +31,7 @@ enum PanelSnapshot {
         let now = Date()
         model.device = CastDevice(id: "sample", name: "Bedroom TV", isMirroring: true, address: "192.168.1.155")
         model.snapshot = Snapshot(casting: true, rateBps: 612_500, previousRateBps: 600_000,
-                                  link: LinkStats(avgMs: 5.6, jitterMs: 0.8, lossPercent: 0, at: now))
+                                  link: LinkStats(avgMs: 5.6, jitterMs: 0.8, lossPercent: 0, lostCount: 0, at: now))
         model.health = .good
         model.wifi = WiFiStatus(rssi: -51, noise: -95, band: "5 GHz")
         model.chromeState = .inactive

@@ -10,7 +10,7 @@ public enum Health: Equatable, Sendable {
         guard s.casting else { return .notCasting }
         // Without fresh link values, the app cannot say that the link is good.
         guard let link = s.link else { return .unstable }
-        if link.lossPercent >= t.lossPercent { return .losingData }
+        if link.lostCount >= t.lostPings { return .losingData }
         if link.avgMs >= t.delayMs || link.jitterMs >= t.jitterMs { return .unstable }
         if let rate = s.rateBps, let previous = s.previousRateBps, previous > 0,
            Double(rate) < Double(previous) * t.suddenDropRatio,
@@ -23,7 +23,8 @@ public enum Health: Equatable, Sendable {
 
 /// The limits for each health state. Tune them here.
 public struct HealthThresholds: Sendable {
-    public var lossPercent = 2.0
+    /// Lost pings in the window that mean data loss. One lost ping alone is not a problem.
+    public var lostPings = 2
     public var delayMs = 50.0
     public var jitterMs = 20.0
     public var suddenDropRatio = 0.5

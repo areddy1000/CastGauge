@@ -6,8 +6,8 @@ import Testing
 struct HealthTests {
     let now = Date()
 
-    func link(_ avg: Double, _ jit: Double, _ loss: Double) -> LinkStats {
-        LinkStats(avgMs: avg, jitterMs: jit, lossPercent: loss, at: now)
+    func link(_ avg: Double, _ jit: Double, _ lost: Int) -> LinkStats {
+        LinkStats(avgMs: avg, jitterMs: jit, lossPercent: Double(lost) * 10, lostCount: lost, at: now)
     }
 
     @Test func lowRateOnCleanLinkIsGood() {
@@ -15,9 +15,15 @@ struct HealthTests {
         #expect(Health.classify(s) == .good)
     }
 
-    @Test func lossIsLosingData() {
-        let s = Snapshot(casting: true, rateBps: 600_000, previousRateBps: 600_000, link: link(5, 1, 5))
+    @Test func twoLostPingsIsLosingData() {
+        let s = Snapshot(casting: true, rateBps: 600_000, previousRateBps: 600_000, link: link(5, 1, 2))
         #expect(Health.classify(s) == .losingData)
+    }
+
+    // One lost ping at the start of a cast must not turn the dot red.
+    @Test func oneLostPingIsNotLosingData() {
+        let s = Snapshot(casting: true, rateBps: 600_000, previousRateBps: 600_000, link: link(5, 1, 1))
+        #expect(Health.classify(s) == .good)
     }
 
     @Test func highJitterIsUnstable() {
@@ -48,7 +54,7 @@ struct HealthTests {
     @Test func staleSnapshotHasNoValues() {
         let old = now.addingTimeInterval(-4)
         let s = Snapshot.make(casting: true, rate: (600_000, old), previous: nil,
-                              link: LinkStats(avgMs: 5, jitterMs: 1, lossPercent: 0, at: old), now: now)
+                              link: LinkStats(avgMs: 5, jitterMs: 1, lossPercent: 0, lostCount: 0, at: old), now: now)
         #expect(s.rateBps == nil && s.link == nil)
         #expect(Health.classify(s) == .unstable)
     }

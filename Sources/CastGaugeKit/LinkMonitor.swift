@@ -21,7 +21,7 @@ public final class LinkMonitor: Sendable {
     public func start() { process.start() }
     public func stop() { process.stop() }
 
-    /// The link values over the last 30 pings, or nil before the first result.
+    /// The link values over the last 10 pings, or nil before the first result.
     public var latest: LinkStats? {
         window.withLock { $0.stats }
     }

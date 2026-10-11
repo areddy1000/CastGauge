@@ -32,13 +32,16 @@ public struct LinkStats: Equatable, Sendable {
     public let jitterMs: Double
     /// The percent of pings with no reply.
     public let lossPercent: Double
+    /// The number of pings with no reply.
+    public let lostCount: Int
     /// The time of the newest ping result.
     public let at: Date
 
-    public init(avgMs: Double, jitterMs: Double, lossPercent: Double, at: Date) {
+    public init(avgMs: Double, jitterMs: Double, lossPercent: Double, lostCount: Int, at: Date) {
         self.avgMs = avgMs
         self.jitterMs = jitterMs
         self.lossPercent = lossPercent
+        self.lostCount = lostCount
         self.at = at
     }
 }
@@ -49,7 +52,8 @@ public struct LinkWindow: Sendable {
     private var events: [PingEvent] = []
     private var lastAt: Date?
 
-    public init(capacity: Int = 30) {
+    /// Ten pings at one per second, so the values recover about 10 seconds after a problem.
+    public init(capacity: Int = 10) {
         self.capacity = capacity
     }
 
@@ -66,12 +70,13 @@ public struct LinkWindow: Sendable {
             if case .reply(_, let ms) = event { return ms }
             return nil
         }
-        let loss = Double(events.count - times.count) / Double(events.count) * 100
+        let lost = events.count - times.count
+        let loss = Double(lost) / Double(events.count) * 100
         guard !times.isEmpty else {
-            return LinkStats(avgMs: 0, jitterMs: 0, lossPercent: loss, at: lastAt)
+            return LinkStats(avgMs: 0, jitterMs: 0, lossPercent: loss, lostCount: lost, at: lastAt)
         }
         let avg = times.reduce(0, +) / Double(times.count)
         let variance = times.map { ($0 - avg) * ($0 - avg) }.reduce(0, +) / Double(times.count)
-        return LinkStats(avgMs: avg, jitterMs: variance.squareRoot(), lossPercent: loss, at: lastAt)
+        return LinkStats(avgMs: avg, jitterMs: variance.squareRoot(), lossPercent: loss, lostCount: lost, at: lastAt)
     }
 }
