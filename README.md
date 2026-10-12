@@ -79,8 +79,8 @@ CastGauge runs all day, so it idles at almost no cost:
 - The panel values and the Wi-Fi read update only while the panel shows.
 - Each retry waits longer after each failure, up to 5 minutes.
 
-The menu bar item shows only while a Chromecast is on the network. The first launch turns on
-Open at Login. The panel footer has a switch for it.
+The menu bar icon always shows. With no Chromecast on the network, the list says "No devices
+found". The first launch turns on Open at Login. The panel footer has a switch for it.
 
 The icon font is a subset with only the icons that the app uses. To add an icon, run
 `scripts/subset-icons.py` on the full Material Symbols Rounded font with the new list of names.

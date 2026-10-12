@@ -10,13 +10,11 @@ struct DeviceListCard: View {
         VStack(alignment: .leading, spacing: 0) {
             CardLabel(text: "CHROMECASTS")
             if model.devices.isEmpty {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Looking for Chromecasts…")
-                        .font(MaterialType.font(14))
-                        .foregroundStyle(MaterialColor.onSurfaceVariant)
-                }
-                .padding(.top, 12)
+                // Bonjour keeps looking in the background. A device shows here when it appears.
+                Text("No devices found")
+                    .font(MaterialType.font(14))
+                    .foregroundStyle(MaterialColor.onSurfaceVariant)
+                    .padding(.top, 12)
             } else {
                 VStack(spacing: 8) {
                     ForEach(model.devices, id: \.id) { device in
